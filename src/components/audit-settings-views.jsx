@@ -128,7 +128,7 @@ export function MovementsView() {
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
             Trazabilidad
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+          <h2 className=" text-2xl font-semibold tracking-tight">
             Auditoría y movimientos
           </h2>
         </div>
@@ -141,6 +141,10 @@ export function MovementsView() {
             <FileSpreadsheet data-icon="inline-start" />
             Exportar Excel
           </Button>
+          <button className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Plus />
+            Nueva venta
+          </button>
         </div>
       </div>
       <Card>

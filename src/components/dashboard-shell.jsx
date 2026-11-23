@@ -261,17 +261,14 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
               <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 Viernes, 29 de agosto de 2026
               </p>
-              <h1 className="text-3xl font-semibold tracking-tight">
+              {/* <h1 className="text-3xl font-semibold tracking-tight">
                 {active}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Una vista clara de la operación de tu negocio.
-              </p>
+              </p> */}
             </div>
-            <button className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-              <Plus />
-              Nueva venta
-            </button>
+
           </div>
           {active === "Dashboard" ? (
             <DashboardContent />
