@@ -1,18 +1,34 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import {
-  Barcode,
-  Edit3,
-  Grid2X2,
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  FileSpreadsheet,
+  LayoutGrid,
+  List,
+  Loader2,
   MoreHorizontal,
   Package,
+  Pencil,
+  Plus,
   Search,
-  Table2,
+  Trash2,
   TrendingUp,
+  Upload,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,13 +44,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Table,
   TableBody,
   TableCell,
@@ -42,297 +51,447 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-const seed = [
-  {
-    id: 1,
-    name: "Café molido 500g",
-    sku: "CAF-500",
-    barcode: "770123400001",
-    category: "Abarrotes",
-    cost: 11.5,
-    price: 18.9,
-    stock: 24,
-    supplier: "Distribuciones Norte",
-  },
-  {
-    id: 2,
-    name: "Leche entera 1L",
-    sku: "LAC-001",
-    barcode: "770123400002",
-    category: "Abarrotes",
-    cost: 2.8,
-    price: 4.5,
-    stock: 8,
-    supplier: "Lácteos Andinos",
-  },
-  {
-    id: 3,
-    name: "Agua mineral 600ml",
-    sku: "BEB-600",
-    barcode: "770123400003",
-    category: "Bebidas",
-    cost: 1.1,
-    price: 2.5,
-    stock: 0,
-    supplier: "Aguas del Valle",
-  },
-  {
-    id: 4,
-    name: "Jabón líquido 500ml",
-    sku: "LIM-500",
-    barcode: "770123400004",
-    category: "Limpieza",
-    cost: 6.2,
-    price: 10.9,
-    stock: 42,
-    supplier: "Higiene Total",
-  },
-  {
-    id: 5,
-    name: "Galletas avena 6u",
-    sku: "ABA-006",
-    barcode: "770123400005",
-    category: "Abarrotes",
-    cost: 3.4,
-    price: 6.9,
-    stock: 5,
-    supplier: "Dulces Central",
-  },
-  {
-    id: 6,
-    name: "Jugo naranja 1L",
-    sku: "BEB-101",
-    barcode: "770123400006",
-    category: "Bebidas",
-    cost: 4.5,
-    price: 7.9,
-    stock: 18,
-    supplier: "Frutales S.A.",
-  },
-];
-const money = (n) => `$${n.toFixed(2)}`;
+import { ProductFormSheet } from "@/components/product-form-sheet";
+import { useProductsCrud } from "../../hook/useProductsCrud";
+
+const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+
+const CSV_TEMPLATE = [
+  "sku;nombre;categoria;codigo_barras;precio_costo;precio_venta;stock_minimo;stock_inicial;imagen_url;activo",
+  "BEB-101;Jugo Natural 1L;Bebidas;7701234567890;4.50;8.50;5;20;;true",
+  "LMP-202;Detergente Multiuso;Limpieza;7709876543210;3.20;6.75;5;15;;true",
+].join("\r\n");
+
+const handleDownloadTemplate = () => {
+  const blob = new Blob(["\uFEFF" + CSV_TEMPLATE], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", "plantilla_productos.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+function StockStatusBadge({ stock, min }) {
+  if (stock <= 0) {
+    return (
+      <Badge className="bg-red-600 text-white" variant="outline">
+        Agotado
+      </Badge>
+    );
+  }
+  if (stock <= min) {
+    return <Badge variant="outline" className="bg-amber-500 text-background border-amber-500/40 dark:text-amber-300">
+      Bajo Stock
+    </Badge>;
+  }
+  return <Badge variant="outline" className="bg-emerald-600 text-background">
+    En Stock
+  </Badge>;
+}
+
 export function ProductsView() {
-  const [products, setProducts] = useState(seed);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("Todas");
-  const [mode, setMode] = useState("grid");
-  const [selected, setSelected] = useState(null);
-  const filtered = useMemo(
-    () =>
-      products.filter(
-        (p) =>
-          (category === "Todas" || p.category === category) &&
-          [p.name, p.sku, p.barcode].some((v) =>
-            v.toLowerCase().includes(query.toLowerCase()),
-          ),
-      ),
-    [products, query, category],
-  );
-  const status = (stock) =>
-    stock === 0 ? "Agotado" : stock <= 8 ? "Bajo Stock" : "En Stock";
-  const margin = (p) => Math.round(((p.price - p.cost) / p.price) * 100);
+  const {
+    filteredProducts,
+    categories,
+    query,
+    setQuery,
+    categoryId,
+    setCategoryId,
+    loading,
+    saving,
+    error,
+    sheetOpen,
+    setSheetOpen,
+    editingProduct,
+    openCreateSheet,
+    openEditSheet,
+    saveProduct,
+    removeProduct,
+    importProductsCsv,
+  } = useProductsCrud();
+
+  const [viewMode, setViewMode] = useState("grid");
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+
+  // Estado del modal de Carga Masiva (CSV)
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvResult, setCsvResult] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "plantilla_productos.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const openCsvModal = () => {
+    setFeedback(null);
+    setCsvFile(null);
+    setCsvResult(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setCsvModalOpen(true);
+  };
+
+  const handleCsvSubmit = async (e) => {
+    e.preventDefault();
+    if (!csvFile) {
+      setFeedback({
+        type: "error",
+        message: "Selecciona un archivo .csv para realizar la carga masiva.",
+      });
+      return;
+    }
+
+    setFeedback(null);
+    try {
+      const result = await importProductsCsv(csvFile);
+      setCsvResult(result);
+      setFeedback({
+        type: result.errores?.length ? "error" : "success",
+        message: `Carga masiva completada: ${result.creados || 0} creados, ${result.actualizados || 0} actualizados${result.errores?.length ? `, ${result.errores.length} con error` : ""}.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err.message || "No se pudo procesar el archivo CSV.",
+      });
+    }
+  };
+
+  const handleSaveProduct = async (formValues) => {
+    const isEditing = Boolean(editingProduct);
+    setFeedback(null);
+    try {
+      const saved = await saveProduct(formValues);
+      setFeedback({
+        type: "success",
+        message: isEditing
+          ? `"${saved?.nombre || formValues.nombre}" se actualizó correctamente.`
+          : `"${saved?.nombre || formValues.nombre}" se creó correctamente en el catálogo.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err.message || "No se pudo guardar el producto.",
+      });
+      throw err;
+    }
+  };
+
+  const requestDelete = (product) => {
+    setFeedback(null);
+    setProductToDelete(product);
+  };
+
+  const confirmDelete = async () => {
+    if (!productToDelete) return;
+    const target = productToDelete;
+
+    try {
+      setDeleting(true);
+      await removeProduct(target);
+      setProductToDelete(null);
+      setFeedback({
+        type: "success",
+        message: `"${target.nombre}" se eliminó correctamente del catálogo y del almacenamiento.`,
+      });
+    } catch (err) {
+      setProductToDelete(null);
+      setFeedback({
+        type: "error",
+        message: err.message || "No se pudo eliminar el producto.",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search className="absolute left-3 top-2.5 text-muted-foreground" />
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 md:flex-row md:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            aria-label="Buscar productos"
+            className="border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0"
+            placeholder="Buscar por nombre, SKU o código de barras"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nombre, SKU o código de barras"
-            className="pl-9"
           />
         </div>
-        <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="w-full lg:w-44">
-            <SelectValue />
+
+        <Select value={categoryId} onValueChange={setCategoryId}>
+          <SelectTrigger className="w-full md:w-44">
+            <SelectValue placeholder="Todas" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Todas">Todas</SelectItem>
-            <SelectItem value="Bebidas">Bebidas</SelectItem>
-            <SelectItem value="Abarrotes">Abarrotes</SelectItem>
-            <SelectItem value="Limpieza">Limpieza</SelectItem>
+            <SelectItem value="all">Todas</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat.id} value={cat.id}>
+                {cat.nombre}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <div className="flex rounded-md border border-border p-1">
+
+        <div className="flex items-center gap-1 rounded-md border p-1">
           <Button
-            aria-label="Vista de cuadrícula"
-            variant={mode === "grid" ? "secondary" : "ghost"}
-            size="icon-sm"
-            onClick={() => setMode("grid")}
+            type="button"
+            variant={viewMode === "grid" ? "secondary" : "ghost"}
+            size="icon"
+            className="size-8"
+            onClick={() => setViewMode("grid")}
+            aria-label="Vista en cuadrícula"
           >
-            <Grid2X2 />
+            <LayoutGrid className="size-4" />
           </Button>
           <Button
-            aria-label="Vista de tabla"
-            variant={mode === "table" ? "secondary" : "ghost"}
-            size="icon-sm"
-            onClick={() => setMode("table")}
+            type="button"
+            variant={viewMode === "table" ? "secondary" : "ghost"}
+            size="icon"
+            className="size-8"
+            onClick={() => setViewMode("table")}
+            aria-label="Vista en tabla"
           >
-            <Table2 />
+            <List className="size-4" />
           </Button>
         </div>
-        <Button
-          className="shrink-0"
-          onClick={() =>
-            setSelected({
-              id: 0,
-              name: "Nuevo producto",
-              sku: "",
-              barcode: "",
-              category: "Abarrotes",
-              cost: 0,
-              price: 0,
-              stock: 0,
-              supplier: "",
-            })
-          }
-        >
-          <Package data-icon="inline-start" />
-          Nuevo Producto
-        </Button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" className="bg-emerald-400 hover:bg-emerald-500" onClick={openCsvModal}>
+            <Upload className="mr-1.5 size-4" />
+            Carga Masiva (CSV)
+          </Button>
+
+          <Button type="button" onClick={openCreateSheet}>
+            <Plus className="mr-1.5 size-4" />
+            Nuevo Producto
+          </Button>
+        </div>
       </div>
-      {mode === "grid" ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((p) => (
-            <Card
-              key={p.id}
-              className="cursor-pointer transition-shadow hover:shadow-md"
-              onClick={() => setSelected(p)}
-            >
-              <div className="flex h-36 items-center justify-center border-b border-border bg-muted">
-                <Package className="size-10 text-muted-foreground" />
-              </div>
-              <CardContent className="flex flex-col gap-3 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <Badge variant="outline">{p.category}</Badge>
-                    <h3 className="mt-2 font-medium">{p.name}</h3>
-                  </div>
+
+      {feedback && (
+        <div
+          className={`flex items-center justify-between gap-3 rounded-lg border p-3.5 text-sm ${
+            feedback.type === "error"
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
+              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {feedback.type === "error" ? (
+              <AlertCircle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            onClick={() => setFeedback(null)}
+            aria-label="Cerrar mensaje"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Cargando productos...
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
+            No se encontraron productos con los filtros actuales.
+          </CardContent>
+        </Card>
+      ) : viewMode === "grid" ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredProducts.map((item) => (
+            <Card key={item.id} className="overflow-hidden">
+              <CardContent className="flex flex-col gap-3.5 p-4">
+                <div className="flex h-60 w-full items-center justify-center overflow-hidden rounded-lg border bg-white p-3 dark:bg-muted/30">
+                  {item.imagenUrl ? (
+                    <img
+                      src={item.imagenUrl}
+                      alt={item.nombre}
+                      className="h-full w-full object-contain transition-transform duration-200 hover:scale-[1.03]"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5 text-muted-foreground/75">
+                      <Package className="size-7" />
+                      <span className="text-[11px]">Sin imagen</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="outline" className="text-xs font-normal">
+                    {item.categoriaNombre}
+                  </Badge>
+
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
+                        type="button"
                         variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Acciones para ${p.name}`}
-                        onClick={(e) => e.stopPropagation()}
+                        size="icon"
+                        className="size-7"
+                        aria-label={`Acciones para ${item.nombre}`}
                       >
-                        <MoreHorizontal />
+                        <MoreHorizontal className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setSelected(p)}>
-                        <Edit3 />
-                        Editar producto
+                      <DropdownMenuItem onClick={() => openEditSheet(item)}>
+                        <Pencil className="mr-2 size-3.5" />
+                        Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem>Ajustar stock</DropdownMenuItem>
-                      <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => requestDelete(item)}
+                      >
+                        <Trash2 className="mr-2 size-3.5" />
+                        Eliminar
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {p.sku}
-                </p>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+
+                <div>
+                  <p className="text-base font-semibold leading-snug">
+                    {item.nombre}
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                    {item.sku}
+                  </p>
+                </div>
+
+                <div className="flex items-end justify-between pt-0.5">
                   <div>
                     <p className="text-xs text-muted-foreground">Costo</p>
-                    <p>{money(p.cost)}</p>
+                    <p className="font-mono text-sm">
+                      {money(item.precioCosto)}
+                    </p>
                   </div>
-                  <div>
+                  <div className="text-right">
                     <p className="text-xs text-muted-foreground">Venta</p>
-                    <p className="font-semibold">{money(p.price)}</p>
+                    <p className="font-mono text-sm font-semibold">
+                      {money(item.precioVenta)}
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center justify-between border-t border-border pt-3">
-                  <span className="text-sm">
-                    Stock: <strong>{p.stock}</strong>
+
+                <div className="flex items-center justify-between border-t pt-3">
+                  <span className="text-xs font-medium">
+                    Stock: {item.stockActual}
                   </span>
-                  <Badge
-                    variant={
-                      p.stock === 0
-                        ? "default"
-                        : p.stock <= 8
-                          ? "outline"
-                          : "secondary"
-                    }
-                  >
-                    {status(p.stock)}
-                  </Badge>
+                  <StockStatusBadge
+                    stock={item.stockActual}
+                    min={item.stockMinimo}
+                  />
                 </div>
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <TrendingUp /> Margen {margin(p)}%
-                </p>
+
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <TrendingUp className="size-3.5" />
+                  <span>Margen {Math.round(item.margen)}%</span>
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       ) : (
         <Card>
-          <CardHeader>
-            <CardTitle>
-              Catálogo de productos{" "}
-              <span className="text-sm font-normal text-muted-foreground">
-                ({filtered.length})
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  {[
-                    "Imagen",
-                    "Nombre",
-                    "SKU",
-                    "Categoría",
-                    "Costo",
-                    "Precio venta",
-                    "Stock",
-                    "Estado",
-                    "Acciones",
-                  ].map((h) => (
-                    <TableHead key={h}>{h}</TableHead>
-                  ))}
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Producto</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Costo</TableHead>
+                  <TableHead>Venta</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead>Margen</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <div className="flex size-9 items-center justify-center rounded bg-muted">
-                        <Package />
-                      </div>
+                {filteredProducts.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-mono text-xs">
+                      {item.sku}
                     </TableCell>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell className="font-mono text-xs">{p.sku}</TableCell>
-                    <TableCell>{p.category}</TableCell>
-                    <TableCell>{money(p.cost)}</TableCell>
-                    <TableCell className="font-semibold">
-                      {money(p.price)}
+                    <TableCell className="font-medium">{item.nombre}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {item.categoriaNombre}
                     </TableCell>
-                    <TableCell>{p.stock}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          p.stock === 0
-                            ? "default"
-                            : p.stock <= 8
-                              ? "outline"
-                              : "secondary"
-                        }
-                      >
-                        {status(p.stock)}
-                      </Badge>
+                    <TableCell className="font-mono text-xs">
+                      {money(item.precioCosto)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">
+                      {money(item.precioVenta)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {item.stockActual}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {Math.round(item.margen)}%
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelected(p)}
-                      >
-                        Ver detalle
-                      </Button>
+                      <StockStatusBadge
+                        stock={item.stockActual}
+                        min={item.stockMinimo}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" variant="ghost" size="icon">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditSheet(item)}>
+                            <Pencil className="mr-2 size-3.5" />
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => requestDelete(item)}
+                          >
+                            <Trash2 className="mr-2 size-3.5" />
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -341,114 +500,167 @@ export function ProductsView() {
           </CardContent>
         </Card>
       )}
-      <Sheet
-        open={!!selected}
-        onOpenChange={(open) => !open && setSelected(null)}
+
+      {/* Modal de Carga Masiva CSV */}
+      <Dialog
+        open={csvModalOpen}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            setCsvModalOpen(false);
+          }
+        }}
       >
-        <SheetContent className="overflow-y-auto sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>
-              {(selected === null || selected === void 0 ? void 0 : selected.id)
-                ? "Detalle del producto"
-                : "Nuevo producto"}
-            </SheetTitle>
-            <SheetDescription>
-              Información comercial, proveedor y movimientos recientes.
-            </SheetDescription>
-          </SheetHeader>
-          {selected && (
-            <div className="flex flex-col gap-5 px-4 pb-6">
-              <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border bg-muted">
-                <Package className="size-10 text-muted-foreground" />
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Carga masiva de productos (CSV)</DialogTitle>
+            <DialogDescription>
+              Sube un archivo `.csv` con tus productos. Obligatorios: `sku`,
+              `nombre` y `precio_venta`. Si el `sku` ya existe, se actualiza.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCsvSubmit} className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3">
+              <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                <FileSpreadsheet className="size-4 shrink-0 text-foreground" />
+                <span>¿No tienes el formato? Descarga una plantilla lista.</span>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
-                  Nombre
-                  <Input defaultValue={selected.name} />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium">
-                  SKU
-                  <Input className="font-mono" defaultValue={selected.sku} />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium">
-                  Categoría
-                  <Input defaultValue={selected.category} />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium">
-                  Precio costo
-                  <Input type="number" defaultValue={selected.cost} />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium">
-                  Precio venta
-                  <Input type="number" defaultValue={selected.price} />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
-                  Proveedor
-                  <Input defaultValue={selected.supplier} />
-                </label>
-              </div>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Código de barras</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex h-16 items-center justify-center gap-1 bg-foreground px-4">
-                    {Array.from({ length: 32 }, (_, i) => (
-                      <span
-                        key={i}
-                        className="h-12 bg-background"
-                        style={{ width: `${i % 3 === 0 ? 3 : 1}px` }}
-                      />
-                    ))}
-                  </div>
-                  <p className="mt-2 flex items-center justify-center gap-2 font-mono text-xs">
-                    <Barcode />
-                    {selected.barcode || "Código pendiente"}
-                  </p>
-                </CardContent>
-              </Card>
-              <div className="grid grid-cols-2 gap-3">
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">
-                      Margen estimado
-                    </p>
-                    <p className="mt-1 text-xl font-semibold">
-                      {margin(selected)}%
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-4">
-                    <p className="text-xs text-muted-foreground">
-                      Stock actual
-                    </p>
-                    <p className="mt-1 text-xl font-semibold">
-                      {selected.stock}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-              <div>
-                <p className="mb-3 text-sm font-medium">
-                  Movimientos recientes
-                </p>
-                <div className="flex flex-col gap-2 text-sm">
-                  <div className="flex justify-between border-b border-border pb-2">
-                    <span>Entrada de inventario</span>
-                    <span className="font-mono">+24 · Hoy</span>
-                  </div>
-                  <div className="flex justify-between border-b border-border pb-2">
-                    <span>Venta POS</span>
-                    <span className="font-mono">-3 · Ayer</span>
-                  </div>
-                </div>
-              </div>
-              <Button onClick={() => setSelected(null)}>Guardar cambios</Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadTemplate}
+              >
+                <Download className="mr-1.5 size-3.5" />
+                Plantilla CSV
+              </Button>
             </div>
-          )}
-        </SheetContent>
-      </Sheet>
+
+            <div className="flex flex-col gap-2">
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const selectedFile = e.target.files?.[0] || null;
+                  setCsvFile(selectedFile);
+                  setCsvResult(null);
+                }}
+              />
+              {csvFile && (
+                <p className="text-xs text-muted-foreground">
+                  Archivo seleccionado:{" "}
+                  <span className="font-mono font-medium text-foreground">
+                    {csvFile.name}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            {csvResult && (
+              <div className="flex flex-col gap-2 rounded-lg border p-3 text-xs">
+                <div className="flex flex-wrap gap-3 font-medium">
+                  <span>Creados: {csvResult.creados ?? 0}</span>
+                  <span>Actualizados: {csvResult.actualizados ?? 0}</span>
+                  <span>Errores: {csvResult.errores?.length ?? 0}</span>
+                </div>
+
+                {Array.isArray(csvResult.errores) &&
+                  csvResult.errores.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto rounded border bg-destructive/5 p-2 text-destructive">
+                      {csvResult.errores.map((errItem, idx) => (
+                        <p key={`${errItem.fila}-${idx}`}>
+                          Fila {errItem.fila} ({errItem.sku}): {errItem.error}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            )}
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => setCsvModalOpen(false)}
+              >
+                Cerrar
+              </Button>
+              <Button type="submit" disabled={saving || !csvFile}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-1.5 size-4 animate-spin" />
+                    Importando...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-1.5 size-4" />
+                    Subir y procesar CSV
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(productToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setProductToDelete(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Eliminar producto?</DialogTitle>
+            <DialogDescription>
+              Vas a eliminar{" "}
+              <span className="font-semibold text-foreground">
+                {productToDelete?.nombre}
+              </span>{" "}
+              ({productToDelete?.sku}). Esta acción eliminará el registro del
+              catálogo y su imagen asociada en el almacenamiento.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setProductToDelete(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleting}
+              onClick={confirmDelete}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                "Sí, eliminar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ProductFormSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        product={editingProduct}
+        categories={categories}
+        saving={saving}
+        onSubmit={handleSaveProduct}
+      />
     </div>
   );
 }

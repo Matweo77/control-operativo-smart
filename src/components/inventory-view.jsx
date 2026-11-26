@@ -1,10 +1,27 @@
 "use client";
-import { useMemo, useState } from "react";
-import { MoreHorizontal, PackagePlus, Search, Upload } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  MoreHorizontal,
+  Search,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,15 +38,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Table,
   TableBody,
   TableCell,
@@ -36,89 +45,93 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-const initialInventory = [
-  {
-    sku: "BEB-001",
-    name: "Café molido 500g",
-    category: "Bebidas",
-    cost: 4.2,
-    price: 8.9,
-    stock: 28,
-    min: 8,
-    initials: "CF",
-  },
-  {
-    sku: "ABR-014",
-    name: "Arroz premium 1kg",
-    category: "Abarrotes",
-    cost: 2.1,
-    price: 4.5,
-    stock: 6,
-    min: 10,
-    initials: "AR",
-  },
-  {
-    sku: "LIM-003",
-    name: "Detergente líquido 1L",
-    category: "Limpieza",
-    cost: 3.4,
-    price: 7.2,
-    stock: 0,
-    min: 5,
-    initials: "DL",
-  },
-  {
-    sku: "BEB-008",
-    name: "Agua mineral 600ml",
-    category: "Bebidas",
-    cost: 0.5,
-    price: 1.5,
-    stock: 84,
-    min: 20,
-    initials: "AG",
-  },
-  {
-    sku: "ABR-022",
-    name: "Galletas de avena",
-    category: "Abarrotes",
-    cost: 1.2,
-    price: 2.8,
-    stock: 13,
-    min: 10,
-    initials: "GA",
-  },
-  {
-    sku: "LIM-011",
-    name: "Jabón de manos 250ml",
-    category: "Limpieza",
-    cost: 1.8,
-    price: 4.1,
-    stock: 3,
-    min: 8,
-    initials: "JM",
-  },
-];
-const money = (value) => `$${value.toFixed(2)}`;
+
+const RAW_API =
+  (typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    import.meta.env.VITE_API_URL) ||
+  (typeof process !== "undefined" &&
+    process.env &&
+    process.env.NEXT_PUBLIC_API_URL) ||
+  "http://localhost:8000/api";
+
+const cleanBase = RAW_API.replace(/\/+$/, "");
+const API_BASE = cleanBase.endsWith("/catalogo")
+  ? cleanBase
+  : `${cleanBase}/catalogo`;
+
+const money = (value) => `$${Number(value || 0).toFixed(2)}`;
+
 function StockBadge({ stock, min }) {
   if (stock === 0)
-    return <Badge className="bg-foreground text-background">Agotado</Badge>;
-  if (stock <= min) return <Badge variant="outline">Stock bajo</Badge>;
-  return <Badge className="bg-foreground text-background">Normal</Badge>;
+    return <Badge className="bg-red-600 text-white">Agotado</Badge>;
+  if (stock <= min) return <Badge className="bg-amber-500/15 text-amber-800 border-amber-500/40 dark:text-amber-300">Stock bajo</Badge>;
+  return <Badge className="bg-emerald-600 text-background">Normal</Badge>;
 }
+
+const mapProductToInventory = (item) => ({
+  id: item.id,
+  empresa: item.empresa,
+  sku: item.sku,
+  name: item.nombre,
+  imageUrl: item.imagen_url || "",
+  categoryId: item.categoria || "",
+  category: item.categoria_nombre || "Sin categoría",
+  cost: Number(item.precio_costo || 0),
+  price: Number(item.precio_venta || 0),
+  stock: Number(item.stock_actual ?? 0),
+  min: Number(item.stock_minimo ?? 5),
+  initials: (item.nombre || "PR").slice(0, 2).toUpperCase(),
+});
+
 export function InventoryView() {
-  const [inventory, setInventory] = useState(initialInventory);
+  const [inventory, setInventory] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [feedback, setFeedback] = useState(null);
+
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [selected, setSelected] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState({
-    name: "",
-    sku: "",
-    category: "Bebidas",
-    cost: "",
-    price: "",
-    min: "",
-  });
+
+  // Estado del modal centrado de Ajuste de Stock
+  const [stockTarget, setStockTarget] = useState(null);
+  const [adjustMode, setAdjustMode] = useState("delta"); // "delta" | "exact"
+  const [deltaInput, setDeltaInput] = useState("1");
+  const [exactInput, setExactInput] = useState("0");
+  const [reasonInput, setReasonInput] = useState("");
+  const [adjusting, setAdjusting] = useState(false);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [catRes, prodRes] = await Promise.all([
+        fetch(`${API_BASE}/categorias/`),
+        fetch(`${API_BASE}/productos/`),
+      ]);
+
+      if (!catRes.ok || !prodRes.ok) {
+        throw new Error("No se pudieron cargar los datos de inventario.");
+      }
+
+      const catData = await catRes.json();
+      const prodData = await prodRes.json();
+
+      setCategories(catData);
+      setInventory(prodData.map(mapProductToInventory));
+    } catch (err) {
+      setError(err.message || "Error de conexión con Django.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const filtered = useMemo(
     () =>
       inventory.filter((item) => {
@@ -131,53 +144,144 @@ export function InventoryView() {
       }),
     [inventory, query, category],
   );
-  const toggleSelected = (sku) =>
+
+  const toggleSelected = (id) =>
     setSelected((current) =>
-      current.includes(sku)
-        ? current.filter((id) => id !== sku)
-        : [...current, sku],
+      current.includes(id)
+        ? current.filter((itemId) => itemId !== id)
+        : [...current, id],
     );
+
   const toggleAll = () =>
     setSelected(
       selected.length === filtered.length
         ? []
-        : filtered.map((item) => item.sku),
+        : filtered.map((item) => item.id),
     );
-  const updateStock = (sku) =>
-    setInventory((items) =>
-      items.map((item) =>
-        item.sku === sku
-          ? Object.assign(Object.assign({}, item), { stock: item.stock + 1 })
-          : item,
-      ),
-    );
-  const deleteProduct = (sku) =>
-    setInventory((items) => items.filter((item) => item.sku !== sku));
-  const addProduct = () => {
-    if (!newProduct.name || !newProduct.sku || !newProduct.price) return;
-    setInventory((items) => [
-      ...items,
-      {
-        sku: newProduct.sku,
-        name: newProduct.name,
-        category: newProduct.category,
-        cost: Number(newProduct.cost) || 0,
-        price: Number(newProduct.price),
-        stock: 0,
-        min: Number(newProduct.min) || 5,
-        initials: newProduct.name.slice(0, 2).toUpperCase(),
-      },
-    ]);
-    setNewProduct({
-      name: "",
-      sku: "",
-      category: "Bebidas",
-      cost: "",
-      price: "",
-      min: "",
-    });
-    setOpen(false);
+
+  const openAdjustModal = (item) => {
+    setFeedback(null);
+    setStockTarget(item);
+    setAdjustMode("delta");
+    setDeltaInput("1");
+    setExactInput(String(item.stock));
+    setReasonInput("");
   };
+
+  const computedDelta = useMemo(() => {
+    if (!stockTarget) return 0;
+    if (adjustMode === "exact") {
+      const targetStock = Math.max(0, Math.floor(Number(exactInput) || 0));
+      return targetStock - stockTarget.stock;
+    }
+    return Math.trunc(Number(deltaInput) || 0);
+  }, [stockTarget, adjustMode, deltaInput, exactInput]);
+
+  const projectedStock = useMemo(() => {
+    if (!stockTarget) return 0;
+    return Math.max(0, stockTarget.stock + computedDelta);
+  }, [stockTarget, computedDelta]);
+
+  const handleConfirmStockAdjust = async (e) => {
+    e.preventDefault();
+    if (!stockTarget) return;
+
+    if (computedDelta === 0) {
+      setFeedback({
+        type: "error",
+        message: "Ingresa una cantidad distinta de 0 para ajustar el stock.",
+      });
+      return;
+    }
+
+    if (stockTarget.stock + computedDelta < 0) {
+      setFeedback({
+        type: "error",
+        message: `No puedes descontar ${Math.abs(computedDelta)} uds.; el stock actual es ${stockTarget.stock} uds.`,
+      });
+      return;
+    }
+
+    try {
+      setAdjusting(true);
+      const res = await fetch(
+        `${API_BASE}/productos/${stockTarget.id}/ajustar-stock/`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            delta: computedDelta,
+            motivo: reasonInput.trim() || undefined,
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          errBody.detail ||
+            errBody.message ||
+            `No se pudo ajustar el stock (HTTP ${res.status}).`,
+        );
+      }
+
+      const updated = await res.json();
+      const mapped = mapProductToInventory(updated);
+
+      setInventory((items) =>
+        items.map((current) =>
+          current.id === stockTarget.id ? mapped : current,
+        ),
+      );
+
+      const sign = computedDelta > 0 ? `+${computedDelta}` : `${computedDelta}`;
+      const newStock = mapped.stock;
+      const isOutOfStock = newStock === 0;
+      const isLowStock = newStock > 0 && newStock <= mapped.min;
+
+      let message = `Stock de "${stockTarget.name}" ajustado (${sign} uds.) -> Nuevo stock: ${newStock} uds.`;
+      if (isOutOfStock) {
+        message += " · Alerta: producto agotado (0 uds.).";
+      } else if (isLowStock) {
+        message += ` · Advertencia: por debajo o en el stock mínimo (${mapped.min} uds.).`;
+      }
+
+      setFeedback({
+        type: isOutOfStock ? "error" : isLowStock ? "warning" : "success",
+        message,
+      });
+      setStockTarget(null);
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err.message || "Error al ajustar el stock.",
+      });
+    } finally {
+      setAdjusting(false);
+    }
+  };
+
+  const deleteProduct = async (item) => {
+    if (!confirm(`¿Eliminar "${item.name}" del catálogo e inventario?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/productos/${item.id}/`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("No se pudo eliminar el producto.");
+      setInventory((items) => items.filter((current) => current.id !== item.id));
+      setSelected((current) => current.filter((id) => id !== item.id));
+      setFeedback({
+        type: "success",
+        message: `"${item.name}" se eliminó correctamente.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err.message || "No se pudo eliminar el producto.",
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -188,19 +292,16 @@ export function InventoryView() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline">
-            <Upload data-icon="inline-start" />
+          <Button type="button" variant="outline">
+            <Upload className="mr-1.5 size-4" />
             Carga Masiva (CSV)
-          </Button>
-          <Button onClick={() => setOpen(true)}>
-            <PackagePlus data-icon="inline-start" />
-            Agregar Producto
           </Button>
         </div>
       </div>
+
       <div className="flex flex-col gap-3 md:flex-row">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
             placeholder="Buscar por nombre o SKU..."
@@ -209,238 +310,377 @@ export function InventoryView() {
           />
         </div>
         <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="w-full md:w-48">
-            <SelectValue placeholder="Categoría" />
+          <SelectTrigger className="w-full md:w-52">
+            <SelectValue placeholder="Todas las categorías">
+              {category === "all" ? "Todas las categorías" : category}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las categorías</SelectItem>
-            <SelectItem value="Bebidas">Bebidas</SelectItem>
-            <SelectItem value="Abarrotes">Abarrotes</SelectItem>
-            <SelectItem value="Limpieza">Limpieza</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat.id} value={cat.nombre}>
+                {cat.nombre}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
+
+      {feedback && (
+        <div
+          className={`flex items-center justify-between gap-3 rounded-lg border p-3.5 text-sm ${
+            feedback.type === "error"
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
+              : feedback.type === "warning"
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {feedback.type === "error" ? (
+              <AlertCircle className="size-4 shrink-0" />
+            ) : (
+              <CheckCircle2 className="size-4 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            onClick={() => setFeedback(null)}
+            aria-label="Cerrar mensaje"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
-                    <Checkbox
-                      checked={
-                        filtered.length > 0 &&
-                        selected.length === filtered.length
-                      }
-                      onCheckedChange={toggleAll}
-                      aria-label="Seleccionar todos"
-                    />
-                  </TableHead>
-                  <TableHead>Imagen</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Costo</TableHead>
-                  <TableHead>Venta</TableHead>
-                  <TableHead>Stock</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((item) => (
-                  <TableRow key={item.sku}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selected.includes(item.sku)}
-                        onCheckedChange={() => toggleSelected(item.sku)}
-                        aria-label={`Seleccionar ${item.name}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex size-9 items-center justify-center rounded-md border bg-muted text-xs font-semibold">
-                        {item.initials}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.sku}
-                    </TableCell>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.category}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {money(item.cost)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {money(item.price)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.stock} uds.
-                    </TableCell>
-                    <TableCell>
-                      <StockBadge stock={item.stock} min={item.min} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Acciones para ${item.name}`}
-                          >
-                            <MoreHorizontal />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Editar producto</DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => updateStock(item.sku)}
-                          >
-                            Ajustar stock (+1)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onSelect={() => deleteProduct(item.sku)}
-                          >
-                            Eliminar
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          {filtered.length === 0 && (
-            <p className="p-10 text-center text-sm text-muted-foreground">
-              No hay productos que coincidan con tu búsqueda.
-            </p>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Cargando inventario...
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={
+                            filtered.length > 0 &&
+                            selected.length === filtered.length
+                          }
+                          onCheckedChange={toggleAll}
+                          aria-label="Seleccionar todos"
+                        />
+                      </TableHead>
+                      <TableHead className="w-16">Imagen</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Costo</TableHead>
+                      <TableHead>Venta</TableHead>
+                      <TableHead>Stock</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selected.includes(item.id)}
+                            onCheckedChange={() => toggleSelected(item.id)}
+                            aria-label={`Seleccionar ${item.name}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {item.imageUrl ? (
+                            <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg border bg-white p-1 dark:bg-muted/30">
+                              <img
+                                src={item.imageUrl}
+                                alt={item.name}
+                                className="h-full w-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex size-10 items-center justify-center rounded-lg border bg-muted text-xs font-semibold text-muted-foreground">
+                              {item.initials}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.sku}
+                        </TableCell>
+                        <TableCell className="font-medium">{item.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {item.category}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {money(item.cost)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-semibold">
+                          {money(item.price)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.stock} uds.
+                        </TableCell>
+                        <TableCell>
+                          <StockBadge stock={item.stock} min={item.min} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                disabled={adjusting && stockTarget?.id === item.id}
+                                aria-label={`Acciones para ${item.name}`}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openAdjustModal(item);
+                                }}
+                              >
+                                <SlidersHorizontal className="mr-2 size-3.5" />
+                                Ajustar stock
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  setTimeout(() => deleteProduct(item), 0);
+                                }}
+                              >
+                                Eliminar
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {filtered.length === 0 && (
+                <p className="p-10 text-center text-sm text-muted-foreground">
+                  No hay productos que coincidan con tu búsqueda.
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Agregar producto</SheetTitle>
-            <SheetDescription>
-              Completa la información para sumar un producto al catálogo.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="flex flex-col gap-4 px-4">
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              Nombre del producto
-              <Input
-                value={newProduct.name}
-                onChange={(e) =>
-                  setNewProduct(
-                    Object.assign(Object.assign({}, newProduct), {
-                      name: e.target.value,
-                    }),
-                  )
-                }
-                placeholder="Ej. Café orgánico"
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              SKU
-              <Input
-                className="font-mono"
-                value={newProduct.sku}
-                onChange={(e) =>
-                  setNewProduct(
-                    Object.assign(Object.assign({}, newProduct), {
-                      sku: e.target.value,
-                    }),
-                  )
-                }
-                placeholder="SKU-001"
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              Categoría
-              <Select
-                value={newProduct.category}
-                onValueChange={(value) =>
-                  setNewProduct(
-                    Object.assign(Object.assign({}, newProduct), {
-                      category: value,
-                    }),
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Bebidas">Bebidas</SelectItem>
-                  <SelectItem value="Abarrotes">Abarrotes</SelectItem>
-                  <SelectItem value="Limpieza">Limpieza</SelectItem>
-                </SelectContent>
-              </Select>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Precio costo
+
+      {/* Modal centrado de Ajuste de Stock */}
+      <Dialog
+        open={Boolean(stockTarget)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !adjusting) setStockTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajustar stock</DialogTitle>
+            <DialogDescription>
+              Suma, resta o define las existencias del producto seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {stockTarget && (
+            <form onSubmit={handleConfirmStockAdjust} className="flex flex-col gap-4">
+              {/* Resumen de datos del producto */}
+              <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
+                {stockTarget.imageUrl ? (
+                  <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white p-1">
+                    <img
+                      src={stockTarget.imageUrl}
+                      alt={stockTarget.name}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex size-12 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-semibold">
+                    {stockTarget.initials}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {stockTarget.name}
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    SKU: {stockTarget.sku} · {stockTarget.category}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Costo:{" "}
+                    <span className="font-mono text-foreground">
+                      {money(stockTarget.cost)}
+                    </span>{" "}
+                    · Venta:{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {money(stockTarget.price)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Stock actual vs proyectado */}
+              <div className="grid grid-cols-3 gap-2 rounded-lg border p-2.5 text-center">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Actual</p>
+                  <p className="font-mono text-sm font-semibold">
+                    {stockTarget.stock} uds.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Cambio</p>
+                  <p className="font-mono text-sm font-semibold">
+                    {computedDelta > 0 ? `+${computedDelta}` : computedDelta}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Nuevo stock</p>
+                  <p className="font-mono text-sm font-semibold">
+                    {projectedStock} uds.
+                  </p>
+                </div>
+              </div>
+
+              {/* Avisos preventivos dentro del modal según nuevo stock */}
+              {projectedStock === 0 && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  Este ajuste dejará el producto agotado (0 uds.).
+                </p>
+              )}
+              {projectedStock > 0 && projectedStock <= stockTarget.min && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                  Este ajuste dejará el producto por debajo o en su stock mínimo ({stockTarget.min} uds.).
+                </p>
+              )}
+
+              {/* Selector de modo: sumar/restar o fijar cantidad */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={adjustMode === "delta" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setAdjustMode("delta")}
+                >
+                  Sumar / Restar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={adjustMode === "exact" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => {
+                    setAdjustMode("exact");
+                    setExactInput(String(stockTarget.stock));
+                  }}
+                >
+                  Fijar stock total
+                </Button>
+              </div>
+
+              {adjustMode === "delta" ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="delta-units">Cantidad a sumar o restar</Label>
+                  <Input
+                    id="delta-units"
+                    type="number"
+                    step="1"
+                    value={deltaInput}
+                    onChange={(e) => setDeltaInput(e.target.value)}
+                    placeholder="Ej. 10 o -2"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {[-5, -1, 1, 5, 10].map((val) => (
+                      <Button
+                        key={val}
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 font-mono text-xs"
+                        onClick={() =>
+                          setDeltaInput(
+                            String((Number(deltaInput) || 0) + val),
+                          )
+                        }
+                      >
+                        {val > 0 ? `+${val}` : val}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="exact-stock">Nuevo stock total (unidades)</Label>
+                  <Input
+                    id="exact-stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={exactInput}
+                    onChange={(e) => setExactInput(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="adjust-reason">Motivo (opcional)</Label>
                 <Input
-                  type="number"
-                  value={newProduct.cost}
-                  onChange={(e) =>
-                    setNewProduct(
-                      Object.assign(Object.assign({}, newProduct), {
-                        cost: e.target.value,
-                      }),
-                    )
-                  }
+                  id="adjust-reason"
+                  value={reasonInput}
+                  onChange={(e) => setReasonInput(e.target.value)}
+                  placeholder="Ej. Reposición de proveedor, conteo físico..."
                 />
-              </label>
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Precio venta
-                <Input
-                  type="number"
-                  value={newProduct.price}
-                  onChange={(e) =>
-                    setNewProduct(
-                      Object.assign(Object.assign({}, newProduct), {
-                        price: e.target.value,
-                      }),
-                    )
-                  }
-                />
-              </label>
-            </div>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              Alerta de stock mínimo
-              <Input
-                type="number"
-                value={newProduct.min}
-                onChange={(e) =>
-                  setNewProduct(
-                    Object.assign(Object.assign({}, newProduct), {
-                      min: e.target.value,
-                    }),
-                  )
-                }
-                placeholder="5"
-              />
-            </label>
-            <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 text-center">
-              <Upload className="text-muted-foreground" />
-              <p className="text-sm font-medium">Arrastra una imagen aquí</p>
-              <p className="text-xs text-muted-foreground">
-                PNG, JPG hasta 5 MB
-              </p>
-            </div>
-          </div>
-          <SheetFooter>
-            <SheetClose asChild>
-              <Button variant="outline">Cancelar</Button>
-            </SheetClose>
-            <Button onClick={addProduct}>Guardar producto</Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={adjusting}
+                  onClick={() => setStockTarget(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={adjusting}>
+                  {adjusting ? (
+                    <>
+                      <Loader2 className="mr-1.5 size-4 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    "Guardar ajuste"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
