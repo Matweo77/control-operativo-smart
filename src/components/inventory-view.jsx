@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   MoreHorizontal,
   Search,
@@ -46,6 +48,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const PAGE_SIZE = 8;
+
 const RAW_API =
   (typeof import.meta !== "undefined" &&
     import.meta.env &&
@@ -65,7 +69,12 @@ const money = (value) => `$${Number(value || 0).toFixed(2)}`;
 function StockBadge({ stock, min }) {
   if (stock === 0)
     return <Badge className="bg-red-600 text-white">Agotado</Badge>;
-  if (stock <= min) return <Badge className="bg-amber-500/15 text-amber-800 border-amber-500/40 dark:text-amber-300">Stock bajo</Badge>;
+  if (stock <= min)
+    return (
+      <Badge className="border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-300">
+        Stock bajo
+      </Badge>
+    );
   return <Badge className="bg-emerald-600 text-background">Normal</Badge>;
 }
 
@@ -74,7 +83,6 @@ const mapProductToInventory = (item) => ({
   empresa: item.empresa,
   sku: item.sku,
   name: item.nombre,
-  imageUrl: item.imagen_url || "",
   categoryId: item.categoria || "",
   category: item.categoria_nombre || "Sin categoría",
   cost: Number(item.precio_costo || 0),
@@ -93,6 +101,7 @@ export function InventoryView() {
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selected, setSelected] = useState([]);
 
   // Estado del modal centrado de Ajuste de Stock
@@ -145,6 +154,48 @@ export function InventoryView() {
     [inventory, query, category],
   );
 
+  // Reiniciar a la primera página al cambiar búsqueda o categoría
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, category]);
+
+  const totalItems = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+
+  // Asegurar que currentPage nunca exceda totalPages tras eliminar registros
+  useEffect(() => {
+    if (currentPage !== safePage) {
+      setCurrentPage(safePage);
+    }
+  }, [currentPage, safePage]);
+
+  const paginatedItems = useMemo(() => {
+    const startIndex = (safePage - 1) * PAGE_SIZE;
+    return filtered.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filtered, safePage]);
+
+  const startItemNumber = totalItems === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endItemNumber = Math.min(safePage * PAGE_SIZE, totalItems);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    }
+    const pages = new Set([1, totalPages, safePage - 1, safePage, safePage + 1]);
+    return Array.from(pages)
+      .filter((p) => p >= 1 && p <= totalPages)
+      .sort((a, b) => a - b);
+  }, [totalPages, safePage]);
+
+  const pageItemIds = useMemo(
+    () => paginatedItems.map((item) => item.id),
+    [paginatedItems],
+  );
+
+  const allPageSelected =
+    pageItemIds.length > 0 && pageItemIds.every((id) => selected.includes(id));
+
   const toggleSelected = (id) =>
     setSelected((current) =>
       current.includes(id)
@@ -152,12 +203,13 @@ export function InventoryView() {
         : [...current, id],
     );
 
-  const toggleAll = () =>
-    setSelected(
-      selected.length === filtered.length
-        ? []
-        : filtered.map((item) => item.id),
-    );
+  const togglePageAll = () =>
+    setSelected((current) => {
+      if (allPageSelected) {
+        return current.filter((id) => !pageItemIds.includes(id));
+      }
+      return Array.from(new Set([...current, ...pageItemIds]));
+    });
 
   const openAdjustModal = (item) => {
     setFeedback(null);
@@ -378,15 +430,11 @@ export function InventoryView() {
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={
-                            filtered.length > 0 &&
-                            selected.length === filtered.length
-                          }
-                          onCheckedChange={toggleAll}
-                          aria-label="Seleccionar todos"
+                          checked={allPageSelected}
+                          onCheckedChange={togglePageAll}
+                          aria-label="Seleccionar productos de esta página"
                         />
                       </TableHead>
-                      <TableHead className="w-16">Imagen</TableHead>
                       <TableHead>SKU</TableHead>
                       <TableHead>Producto</TableHead>
                       <TableHead>Categoría</TableHead>
@@ -398,7 +446,7 @@ export function InventoryView() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((item) => (
+                    {paginatedItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>
                           <Checkbox
@@ -406,21 +454,6 @@ export function InventoryView() {
                             onCheckedChange={() => toggleSelected(item.id)}
                             aria-label={`Seleccionar ${item.name}`}
                           />
-                        </TableCell>
-                        <TableCell>
-                          {item.imageUrl ? (
-                            <div className="flex size-10 items-center justify-center overflow-hidden rounded-lg border bg-white p-1 dark:bg-muted/30">
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="h-full w-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex size-10 items-center justify-center rounded-lg border bg-muted text-xs font-semibold text-muted-foreground">
-                              {item.initials}
-                            </div>
-                          )}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {item.sku}
@@ -482,10 +515,90 @@ export function InventoryView() {
                   </TableBody>
                 </Table>
               </div>
-              {filtered.length === 0 && (
+
+              {filtered.length === 0 ? (
                 <p className="p-10 text-center text-sm text-muted-foreground">
                   No hay productos que coincidan con tu búsqueda.
                 </p>
+              ) : (
+                <div className="flex flex-col gap-3 border-t px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    Mostrando{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {startItemNumber}–{endItemNumber}
+                    </span>{" "}
+                    de{" "}
+                    <span className="font-mono font-medium text-foreground">
+                      {totalItems}
+                    </span>{" "}
+                    {totalItems === 1 ? "producto" : "productos"} (máx.{" "}
+                    {PAGE_SIZE} por página)
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={safePage <= 1}
+                        onClick={() =>
+                          setCurrentPage((prev) => Math.max(1, prev - 1))
+                        }
+                        aria-label="Página anterior"
+                      >
+                        <ChevronLeft className="mr-1 size-3.5" />
+                        Anterior
+                      </Button>
+
+                      <div className="flex items-center gap-1">
+                        {pageNumbers.map((pageNum, index) => {
+                          const prevPage = pageNumbers[index - 1];
+                          const showGap = prevPage && pageNum - prevPage > 1;
+                          return (
+                            <div key={pageNum} className="flex items-center gap-1">
+                              {showGap && (
+                                <span className="px-1.5 text-muted-foreground">
+                                  …
+                                </span>
+                              )}
+                              <Button
+                                type="button"
+                                variant={
+                                  pageNum === safePage ? "default" : "outline"
+                                }
+                                size="sm"
+                                className="h-8 min-w-8 px-2 font-mono text-xs"
+                                onClick={() => setCurrentPage(pageNum)}
+                                aria-current={
+                                  pageNum === safePage ? "page" : undefined
+                                }
+                              >
+                                {pageNum}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={safePage >= totalPages}
+                        onClick={() =>
+                          setCurrentPage((prev) =>
+                            Math.min(totalPages, prev + 1),
+                          )
+                        }
+                        aria-label="Página siguiente"
+                      >
+                        Siguiente
+                        <ChevronRight className="ml-1 size-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -508,22 +621,15 @@ export function InventoryView() {
           </DialogHeader>
 
           {stockTarget && (
-            <form onSubmit={handleConfirmStockAdjust} className="flex flex-col gap-4">
+            <form
+              onSubmit={handleConfirmStockAdjust}
+              className="flex flex-col gap-4"
+            >
               {/* Resumen de datos del producto */}
               <div className="flex items-center gap-3 rounded-lg border bg-muted/40 p-3">
-                {stockTarget.imageUrl ? (
-                  <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white p-1">
-                    <img
-                      src={stockTarget.imageUrl}
-                      alt={stockTarget.name}
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-semibold">
-                    {stockTarget.initials}
-                  </div>
-                )}
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-md border bg-muted text-xs font-semibold">
+                  {stockTarget.initials}
+                </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">
                     {stockTarget.name}
@@ -559,7 +665,9 @@ export function InventoryView() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-muted-foreground">Nuevo stock</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Nuevo stock
+                  </p>
                   <p className="font-mono text-sm font-semibold">
                     {projectedStock} uds.
                   </p>
@@ -574,7 +682,8 @@ export function InventoryView() {
               )}
               {projectedStock > 0 && projectedStock <= stockTarget.min && (
                 <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-                  Este ajuste dejará el producto por debajo o en su stock mínimo ({stockTarget.min} uds.).
+                  Este ajuste dejará el producto por debajo o en su stock mínimo
+                  ({stockTarget.min} uds.).
                 </p>
               )}
 
@@ -635,7 +744,9 @@ export function InventoryView() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="exact-stock">Nuevo stock total (unidades)</Label>
+                  <Label htmlFor="exact-stock">
+                    Nuevo stock total (unidades)
+                  </Label>
                   <Input
                     id="exact-stock"
                     type="number"

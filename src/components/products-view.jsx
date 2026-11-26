@@ -85,13 +85,20 @@ function StockStatusBadge({ stock, min }) {
     );
   }
   if (stock <= min) {
-    return <Badge variant="outline" className="bg-amber-500 text-background border-amber-500/40 dark:text-amber-300">
-      Bajo Stock
-    </Badge>;
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500/40 bg-amber-500 text-background dark:text-amber-300"
+      >
+        Bajo Stock
+      </Badge>
+    );
   }
-  return <Badge variant="outline" className="bg-emerald-600 text-background">
-    En Stock
-  </Badge>;
+  return (
+    <Badge variant="outline" className="bg-emerald-600 text-background">
+      En Stock
+    </Badge>
+  );
 }
 
 export function ProductsView() {
@@ -124,24 +131,19 @@ export function ProductsView() {
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [csvFile, setCsvFile] = useState(null);
   const [csvResult, setCsvResult] = useState(null);
+  const [isDraggingCsv, setIsDraggingCsv] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleDownloadTemplate = () => {
-    const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", "plantilla_productos.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleCsvFileChange = (selectedFile) => {
+    setCsvFile(selectedFile || null);
+    setCsvResult(null);
   };
 
   const openCsvModal = () => {
     setFeedback(null);
     setCsvFile(null);
     setCsvResult(null);
+    setIsDraggingCsv(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -273,7 +275,12 @@ export function ProductsView() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" className="bg-emerald-400 hover:bg-emerald-500" onClick={openCsvModal}>
+          <Button
+            type="button"
+            variant="outline"
+            className="bg-emerald-400 hover:bg-emerald-500"
+            onClick={openCsvModal}
+          >
             <Upload className="mr-1.5 size-4" />
             Carga Masiva (CSV)
           </Button>
@@ -507,28 +514,55 @@ export function ProductsView() {
         onOpenChange={(open) => {
           if (!open && !saving) {
             setCsvModalOpen(false);
+            setIsDraggingCsv(false);
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Carga masiva de productos (CSV)</DialogTitle>
-            <DialogDescription>
-              Sube un archivo `.csv` con tus productos. Obligatorios: `sku`,
-              `nombre` y `precio_venta`. Si el `sku` ya existe, se actualiza.
-            </DialogDescription>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                <FileSpreadsheet className="size-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg">
+                  Carga masiva de productos (CSV)
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  Importa o actualiza productos por lote. Si el{" "}
+                  <span className="font-mono font-medium text-foreground">
+                    sku
+                  </span>{" "}
+                  ya existe, se actualiza automáticamente.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+              <span>Obligatorios:</span>
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                sku
+              </Badge>
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                nombre
+              </Badge>
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                precio_venta
+              </Badge>
+            </div>
           </DialogHeader>
 
-          <form onSubmit={handleCsvSubmit} className="flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 p-3">
+          <form onSubmit={handleCsvSubmit} className="flex flex-col gap-4 pt-1">
+            <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted/40 px-3.5 py-2.5">
               <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
-                <FileSpreadsheet className="size-4 shrink-0 text-foreground" />
-                <span>¿No tienes el formato? Descarga una plantilla lista.</span>
+                <FileSpreadsheet className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>¿Aún no tienes el formato? Descarga la plantilla lista.</span>
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="shrink-0"
                 onClick={handleDownloadTemplate}
               >
                 <Download className="mr-1.5 size-3.5" />
@@ -536,38 +570,117 @@ export function ProductsView() {
               </Button>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => !saving && fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !saving) {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!saving) setIsDraggingCsv(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setIsDraggingCsv(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingCsv(false);
+                if (saving) return;
+                const dropped = e.dataTransfer.files?.[0] || null;
+                if (dropped) {
+                  handleCsvFileChange(dropped);
+                }
+              }}
+              className={`group flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+                isDraggingCsv
+                  ? "border-emerald-500 bg-emerald-500/10"
+                  : csvFile
+                    ? "border-emerald-500/50 bg-emerald-500/5 hover:bg-emerald-500/10"
+                    : "border-muted-foreground/25 bg-muted/20 hover:border-primary/50 hover:bg-muted/40"
+              }`}
+            >
               <Input
                 ref={fileInputRef}
                 type="file"
                 accept=".csv,text/csv"
+                className="hidden"
                 onChange={(e) => {
                   const selectedFile = e.target.files?.[0] || null;
-                  setCsvFile(selectedFile);
-                  setCsvResult(null);
+                  handleCsvFileChange(selectedFile);
                 }}
               />
-              {csvFile && (
-                <p className="text-xs text-muted-foreground">
-                  Archivo seleccionado:{" "}
-                  <span className="font-mono font-medium text-foreground">
+
+              <div className="flex size-11 items-center justify-center rounded-full border bg-background shadow-xs transition-transform group-hover:scale-105">
+                <Upload className="size-5 text-muted-foreground group-hover:text-foreground" />
+              </div>
+
+              {csvFile ? (
+                <div className="flex flex-col items-center gap-1">
+                  <p className="text-sm font-medium text-foreground">
                     {csvFile.name}
-                  </span>
-                </p>
+                  </p>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {(csvFile.size / 1024).toFixed(1)} KB · Clic para cambiar
+                    archivo
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-7 text-xs text-destructive hover:text-destructive"
+                    disabled={saving}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCsvFileChange(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                  >
+                    <X className="mr-1 size-3.5" />
+                    Quitar archivo
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Arrastra tu archivo <span className="font-mono">.csv</span>{" "}
+                    aquí o haz clic para explorarlo
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Soporta archivos separados por punto y coma (;) o coma (,)
+                  </p>
+                </div>
               )}
             </div>
 
             {csvResult && (
-              <div className="flex flex-col gap-2 rounded-lg border p-3 text-xs">
-                <div className="flex flex-wrap gap-3 font-medium">
-                  <span>Creados: {csvResult.creados ?? 0}</span>
-                  <span>Actualizados: {csvResult.actualizados ?? 0}</span>
-                  <span>Errores: {csvResult.errores?.length ?? 0}</span>
+              <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2 font-medium">
+                  <Badge className="bg-emerald-600 text-white">
+                    Creados: {csvResult.creados ?? 0}
+                  </Badge>
+                  <Badge variant="secondary">
+                    Actualizados: {csvResult.actualizados ?? 0}
+                  </Badge>
+                  <Badge
+                    variant={
+                      (csvResult.errores?.length ?? 0) > 0
+                        ? "destructive"
+                        : "outline"
+                    }
+                  >
+                    Errores: {csvResult.errores?.length ?? 0}
+                  </Badge>
                 </div>
 
                 {Array.isArray(csvResult.errores) &&
                   csvResult.errores.length > 0 && (
-                    <div className="max-h-36 overflow-y-auto rounded border bg-destructive/5 p-2 text-destructive">
+                    <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 text-destructive">
                       {csvResult.errores.map((errItem, idx) => (
                         <p key={`${errItem.fila}-${idx}`}>
                           Fila {errItem.fila} ({errItem.sku}): {errItem.error}
@@ -578,7 +691,7 @@ export function ProductsView() {
               </div>
             )}
 
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter className="gap-2 pt-1 sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -587,7 +700,11 @@ export function ProductsView() {
               >
                 Cerrar
               </Button>
-              <Button type="submit" disabled={saving || !csvFile}>
+              <Button
+                type="submit"
+                disabled={saving || !csvFile}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
                 {saving ? (
                   <>
                     <Loader2 className="mr-1.5 size-4 animate-spin" />
