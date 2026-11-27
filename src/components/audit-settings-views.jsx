@@ -367,6 +367,7 @@ export function MovementsView({ onNavigate }) {
           <Button
             type="button"
             variant="outline"
+            className="bg-red-300 text-accent-foreground hover:bg-red-400"
             disabled={rows.length === 0}
             onClick={handleExportPdf}
           >
@@ -376,20 +377,13 @@ export function MovementsView({ onNavigate }) {
           <Button
             type="button"
             variant="outline"
+            className="bg-green-300 text-accent-foreground hover:bg-green-400"
             disabled={rows.length === 0}
             onClick={handleExportExcel}
           >
             <FileSpreadsheet data-icon="inline-start" />
             Exportar Excel
           </Button>
-          <button
-            type="button"
-            onClick={() => onNavigate && onNavigate("pos")}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus />
-            Nueva venta
-          </button>
         </div>
       </div>
 
@@ -628,11 +622,8 @@ export function SettingsView() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
-          Administración
-        </p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-          Configuración
+        <h2 className="text-2xl font-semibold tracking-tight">
+          Configuración y administracion
         </h2>
       </div>
       <Tabs defaultValue="company" className="w-full">

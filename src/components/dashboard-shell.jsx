@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -9,6 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   Bell,
   Boxes,
   ChevronDown,
@@ -23,10 +24,9 @@ import {
   Settings,
   ShoppingCart,
   Store,
+  TrendingUp,
   Users,
   X,
-  TrendingUp,
-  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,6 +37,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -51,6 +58,23 @@ import { MovementsView, SettingsView } from "@/components/audit-settings-views";
 import { CustomersView } from "@/components/customers-view";
 import { ProductsView } from "@/components/products-view";
 
+const API_BASE = (
+  (typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    import.meta.env.VITE_API_URL) ||
+  (typeof process !== "undefined" &&
+    process.env &&
+    process.env.NEXT_PUBLIC_API_URL) ||
+  "http://localhost:8000/api"
+).replace(/\/+$/, "");
+
+const moneyUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Ventas", icon: ShoppingCart },
@@ -61,46 +85,9 @@ const navItems = [
   { label: "Configuración", icon: Settings },
 ];
 
-const salesData = [
-  { day: "Lun", sales: 1840 },
-  { day: "Mar", sales: 2320 },
-  { day: "Mié", sales: 1980 },
-  { day: "Jue", sales: 2860 },
-  { day: "Vie", sales: 3240 },
-  { day: "Sáb", sales: 4120 },
-  { day: "Dom", sales: 3780 },
-];
-
-const predictions = [
-  {
-    name: "Café molido 500g",
-    stock: "3 unidades",
-    days: "2 días",
-    velocity: "Alta",
-  },
-  {
-    name: "Leche entera 1L",
-    stock: "8 unidades",
-    days: "4 días",
-    velocity: "Media",
-  },
-  {
-    name: "Pan artesanal",
-    stock: "12 unidades",
-    days: "6 días",
-    velocity: "Media",
-  },
-];
-
-const transactions = [
-  ["#POS-1048", "14:32", "María González", "$48.90", "Tarjeta"],
-  ["#POS-1047", "14:18", "Carlos Ruiz", "$126.50", "Efectivo"],
-  ["#POS-1046", "13:55", "Ana Martínez", "$32.00", "Transferencia"],
-  ["#POS-1045", "13:41", "Diego Torres", "$89.75", "Tarjeta"],
-  ["#POS-1044", "13:26", "Laura Sánchez", "$214.20", "Tarjeta"],
-];
-
-const chartConfig = { sales: { label: "Ventas", color: "var(--chart-1)" } };
+const chartConfig = {
+  sales: { label: "Ventas (USD)", color: "var(--chart-1)" },
+};
 
 function formatCurrentDate(date = new Date()) {
   return new Intl.DateTimeFormat("es-CO", {
@@ -117,10 +104,12 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
   const [active, setActive] = useState(initialActive);
   const [collapsed, setCollapsed] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState("Sucursal Centro");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggedOut, setLoggedOut] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => formatCurrentDate());
+  const [alertsCount, setAlertsCount] = useState(0);
 
   useEffect(() => {
     const syncDate = () => {
@@ -255,17 +244,28 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
                 className="hidden items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent sm:flex"
               >
                 <span className="size-2 rounded-full bg-chart-2" />
-                Sucursal Centro
+                {selectedBranch}
                 <ChevronDown />
               </button>
               {branchOpen && (
                 <div className="absolute right-0 top-11 w-48 rounded-md border border-border bg-popover p-1 text-sm shadow-lg">
-                  <button className="w-full rounded px-3 py-2 text-left hover:bg-accent">
-                    Sucursal Centro
-                  </button>
-                  <button className="w-full rounded px-3 py-2 text-left text-muted-foreground hover:bg-accent">
-                    Sucursal Norte
-                  </button>
+                  {["Sucursal Centro", "Sucursal Norte"].map((branch) => (
+                    <button
+                      key={branch}
+                      type="button"
+                      onClick={() => {
+                        setSelectedBranch(branch);
+                        setBranchOpen(false);
+                      }}
+                      className={`w-full rounded px-3 py-2 text-left hover:bg-accent ${
+                        selectedBranch === branch
+                          ? "font-medium"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {branch}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -276,13 +276,17 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
                 className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Bell />
-                <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
+                {alertsCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
+                )}
               </button>
               {notificationsOpen && (
                 <div className="absolute right-0 top-11 w-72 rounded-md border border-border bg-popover p-4 shadow-lg">
                   <p className="text-sm font-semibold">Notificaciones</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Tienes 4 productos con stock bajo.
+                    {alertsCount > 0
+                      ? `Tienes ${alertsCount} ${alertsCount === 1 ? "producto con alerta de stock" : "productos con alertas de stock"}.`
+                      : "Sin alertas de inventario por el momento."}
                   </p>
                 </div>
               )}
@@ -303,7 +307,10 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
           </div>
 
           {active === "Dashboard" ? (
-            <DashboardContent />
+            <DashboardContent
+              onNavigate={setActive}
+              onAlertsChange={setAlertsCount}
+            />
           ) : active === "Ventas" ? (
             <PosView />
           ) : active === "Inventario" ? (
@@ -313,7 +320,7 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
           ) : active === "Productos" ? (
             <ProductsView />
           ) : active === "Auditoría" ? (
-            <MovementsView />
+            <MovementsView onNavigate={setActive} />
           ) : active === "Configuración" ? (
             <SettingsView />
           ) : (
@@ -341,37 +348,126 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
   );
 }
 
-function DashboardContent() {
+function DashboardContent({ onNavigate, onAlertsChange }) {
+  const [daysRange, setDaysRange] = useState("7");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [summary, setSummary] = useState({
+    kpis: {
+      ventas_hoy: 0,
+      tickets_hoy: 0,
+      ventas_acumuladas: 0,
+      utilidad_estimada: 0,
+      margen_porcentaje: 0,
+      utilidad_es_de_hoy: false,
+      productos_total: 0,
+      productos_activos: 0,
+      alertas_stock: 0,
+      agotados: 0,
+      stock_bajo: 0,
+    },
+    dias_serie: 7,
+    ventas_diarias: [],
+    predicciones: [],
+    transacciones_recientes: [],
+  });
+
+  const loadSummary = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await fetch(`${API_BASE}/analitica/resumen/?dias=${daysRange}`);
+      if (!res.ok) {
+        throw new Error(`Error al cargar analítica (HTTP ${res.status}).`);
+      }
+      const data = await res.json();
+      setSummary(data);
+      if (typeof onAlertsChange === "function") {
+        onAlertsChange(Number(data?.kpis?.alertas_stock || 0));
+      }
+    } catch (err) {
+      setError(
+        err.message || "No se pudieron cargar los indicadores del dashboard.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [daysRange, onAlertsChange]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  const kpis = summary.kpis || {};
+  const salesSeries = Array.isArray(summary.ventas_diarias)
+    ? summary.ventas_diarias
+    : [];
+  const predictionsList = Array.isArray(summary.predicciones)
+    ? summary.predicciones
+    : [];
+  const recentTransactions = Array.isArray(summary.transacciones_recientes)
+    ? summary.transacciones_recientes
+    : [];
+
+  const utilidadDetail = kpis.utilidad_es_de_hoy
+    ? `${Number(kpis.margen_porcentaje || 0).toFixed(1)}% margen hoy`
+    : `${Number(kpis.margen_porcentaje || 0).toFixed(1)}% margen acumulado`;
+
+  const stockDetail =
+    Number(kpis.alertas_stock || 0) > 0
+      ? `${Number(kpis.agotados || 0)} agotados · ${Number(kpis.stock_bajo || 0)} stock bajo`
+      : "Inventario dentro de rangos";
+
   return (
     <div className="flex flex-col gap-6">
+      {error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {error}
+        </div>
+      )}
+
       <section
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
         aria-label="Indicadores clave"
       >
         <Kpi
           title="Ventas del Día"
-          value="$12,480.00"
-          detail="+12.5% vs. ayer"
+          value={loading ? "—" : moneyUsd.format(Number(kpis.ventas_hoy || 0))}
+          detail={
+            loading
+              ? "Consultando ventas..."
+              : `${Number(kpis.tickets_hoy || 0)} ${Number(kpis.tickets_hoy || 0) === 1 ? "ticket hoy" : "tickets hoy"} · Acum.: ${moneyUsd.format(Number(kpis.ventas_acumuladas || 0))}`
+          }
           icon={ShoppingCart}
         />
         <Kpi
           title="Utilidad Estimada"
-          value="$4,218.60"
-          detail="33.8% de margen"
+          value={
+            loading
+              ? "—"
+              : moneyUsd.format(Number(kpis.utilidad_estimada || 0))
+          }
+          detail={loading ? "Calculando margen..." : utilidadDetail}
           icon={TrendingUp}
         />
         <Kpi
           title="Productos en Catálogo"
-          value="1,284"
-          detail="+8 esta semana"
+          value={loading ? "—" : String(Number(kpis.productos_total || 0))}
+          detail={
+            loading
+              ? "Consultando catálogo..."
+              : `${Number(kpis.productos_activos || 0)} activos en catálogo`
+          }
           icon={Package}
         />
         <Kpi
-          title="Alertas de Bajo Stock"
-          value="4"
-          detail="Requieren atención"
+          title="Alertas de Stock"
+          value={loading ? "—" : String(Number(kpis.alertas_stock || 0))}
+          detail={loading ? "Verificando inventario..." : stockDetail}
           icon={AlertTriangle}
-          badge
         />
       </section>
 
@@ -379,18 +475,27 @@ function DashboardContent() {
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>
-              <CardTitle>Ventas diarias</CardTitle>
-              <CardDescription>Tendencia de los últimos 7 días</CardDescription>
+              <CardTitle>Ventas diarias (USD)</CardTitle>
+              <CardDescription>
+                Tendencia de los últimos {daysRange} días
+              </CardDescription>
             </div>
-            <Badge variant="outline">
-              Esta semana <ChevronDown className="ml-1" />
-            </Badge>
+            <Select value={daysRange} onValueChange={setDaysRange}>
+              <SelectTrigger className="w-32" aria-label="Rango de días">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Últimos 7 días</SelectItem>
+                <SelectItem value="14">Últimos 14 días</SelectItem>
+                <SelectItem value="30">Últimos 30 días</SelectItem>
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[260px] w-full">
               <AreaChart
-                data={salesData}
-                margin={{ left: -20, right: 8, top: 12 }}
+                data={salesSeries}
+                margin={{ left: -12, right: 8, top: 12 }}
               >
                 <CartesianGrid
                   vertical={false}
@@ -406,11 +511,18 @@ function DashboardContent() {
                 <YAxis
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(value) => `$${value / 1000}k`}
+                  tickFormatter={(value) =>
+                    value >= 1000 ? `$${(value / 1000).toFixed(1).replace(/\.0$/, "")}k` : `$${value}`
+                  }
                 />
                 <Tooltip
                   cursor={false}
-                  content={<ChartTooltipContent indicator="line" />}
+                  content={
+                    <ChartTooltipContent
+                      indicator="line"
+                      formatter={(value) => moneyUsd.format(Number(value || 0))}
+                    />
+                  }
                 />
                 <Area
                   dataKey="sales"
@@ -430,32 +542,45 @@ function DashboardContent() {
           <CardHeader>
             <CardTitle>Predicción de Agotamiento</CardTitle>
             <CardDescription>
-              Minería de datos · próximos 7 días
+              Registros de rotación · próximos días estimados
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {predictions.map((item, index) => (
-              <div
-                key={item.name}
-                className="flex items-center justify-between gap-3 border-b border-border pb-4 last:border-0 last:pb-0"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.name}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {item.stock} · velocidad {item.velocity.toLowerCase()}
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Cargando predicciones...
+              </p>
+            ) : predictionsList.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No hay registros en predicciones de agotamiento todavía.
+              </p>
+            ) : (
+              predictionsList.map((item, index) => (
+                <div
+                  key={item.id || item.name}
+                  className="flex items-center justify-between gap-3 border-b border-border pb-4 last:border-0 last:pb-0"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {item.stock} unidades · velocidad{" "}
+                        {String(item.velocity || "").toLowerCase()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold">{item.days} días</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      estimado
                     </p>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-sm font-semibold">{item.days}</p>
-                  <p className="text-[10px] text-muted-foreground">estimado</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
       </section>
@@ -468,7 +593,11 @@ function DashboardContent() {
               Últimas ventas procesadas en el punto de venta
             </CardDescription>
           </div>
-          <button className="text-xs font-medium underline underline-offset-4">
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate("Auditoría")}
+            className="text-xs font-medium underline underline-offset-4 hover:text-primary"
+          >
             Ver todas
           </button>
         </CardHeader>
@@ -476,32 +605,53 @@ function DashboardContent() {
           <Table>
             <TableHeader>
               <TableRow>
-                {["ID", "Hora", "Cliente", "Total", "Método de pago"].map(
-                  (head) => (
-                    <TableHead key={head}>{head}</TableHead>
-                  ),
-                )}
+                <TableHead>Ticket</TableHead>
+                <TableHead>Hora</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Responsable</TableHead>
+                <TableHead>Método de pago</TableHead>
+                <TableHead className="text-right">Total (USD)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((row) => (
-                <TableRow key={row[0]}>
-                  {row.map((cell, index) => (
-                    <TableCell
-                      key={cell}
-                      className={
-                        index === 3
-                          ? "font-semibold"
-                          : index === 0
-                            ? "font-mono text-xs"
-                            : ""
-                      }
-                    >
-                      {cell}
-                    </TableCell>
-                  ))}
+              {loading ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
+                    Cargando transacciones recientes...
+                  </TableCell>
                 </TableRow>
-              ))}
+              ) : recentTransactions.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="py-8 text-center text-sm text-muted-foreground"
+                  >
+                    No hay ventas registradas todavía.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                recentTransactions.map((tx) => (
+                  <TableRow key={tx.id}>
+                    <TableCell className="font-mono text-xs">
+                      #{tx.ticket}
+                    </TableCell>
+                    <TableCell className="text-xs">{tx.hora}</TableCell>
+                    <TableCell>{tx.cliente}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {tx.responsable}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{tx.metodo_pago}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold">
+                      {moneyUsd.format(Number(tx.total || 0))}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -510,18 +660,17 @@ function DashboardContent() {
   );
 }
 
-function Kpi({ title, value, detail, icon: Icon, badge = false }) {
+function Kpi({ title, value, detail, icon: Icon }) {
   return (
     <Card>
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <p className="text-sm text-muted-foreground">{title}</p>
-          <div className="flex items-center gap-2">
-            <Icon className="text-muted-foreground" />
-            <>{badge && <Badge variant="secondary">4 alertas</Badge>}</>
-          </div>
+          <Icon className="size-4 text-muted-foreground" />
         </div>
-        <p className="mt-5 text-2xl font-semibold tracking-tight">{value}</p>
+        <p className="mt-5 font-mono text-2xl font-semibold tracking-tight">
+          {value}
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
       </CardContent>
     </Card>
