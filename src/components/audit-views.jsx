@@ -5,22 +5,11 @@ import {
   ChevronRight,
   FileSpreadsheet,
   FileText,
-  Plus,
-  Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -36,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PAGE_SIZE = 5;
 
@@ -69,34 +57,12 @@ const MOVEMENT_META = {
   },
 };
 
-const members = [
-  ["Mariana López", "mariana@smartpos.co", "Propietario", "Activo"],
-  ["Carlos Ruiz", "carlos@smartpos.co", "Administrador", "Activo"],
-  ["Laura Gómez", "laura@smartpos.co", "Vendedor", "Activo"],
-];
-
 function typeBadge(rawType) {
   const meta = MOVEMENT_META[rawType] || {
     label: rawType || "Movimiento",
     variant: "outline",
   };
   return <Badge variant={meta.variant}>{meta.label}</Badge>;
-}
-
-function roleBadge(role) {
-  return (
-    <Badge
-      variant={
-        role === "Propietario"
-          ? "default"
-          : role === "Administrador"
-            ? "secondary"
-            : "outline"
-      }
-    >
-      {role}
-    </Badge>
-  );
 }
 
 function formatDateTime(isoString) {
@@ -113,7 +79,7 @@ function formatDateTime(isoString) {
   });
 }
 
-export function MovementsView({ onNavigate }) {
+export function MovementsView() {
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -612,169 +578,6 @@ export function MovementsView({ onNavigate }) {
           )}
         </CardContent>
       </Card>
-    </section>
-  );
-}
-
-export function SettingsView() {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  return (
-    <section className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Configuración y administracion
-        </h2>
-      </div>
-      <Tabs defaultValue="company" className="w-full">
-        <TabsList>
-          <TabsTrigger value="company">Empresa</TabsTrigger>
-          <TabsTrigger value="users">Usuarios y Roles</TabsTrigger>
-        </TabsList>
-        <TabsContent value="company">
-          <Card>
-            <CardHeader>
-              <CardTitle>Datos de la empresa</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-5 md:grid-cols-2">
-              <div className="flex flex-col gap-2 md:col-span-2">
-                <Label>Logo del negocio</Label>
-                <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed bg-muted/20 text-sm text-muted-foreground">
-                  <Upload className="mr-2 size-4" />
-                  Arrastra una imagen o selecciona un archivo
-                </div>
-              </div>
-              {[
-                ["business-name", "Nombre del negocio", "Smart POS"],
-                ["nit", "NIT / ID fiscal", "901.234.567-8"],
-                ["address", "Dirección", "Calle 93 # 14-28"],
-                ["phone", "Teléfono", "+57 300 000 0000"],
-              ].map(([id, label, placeholder]) => (
-                <div key={id} className="flex flex-col gap-2">
-                  <Label htmlFor={id}>{label}</Label>
-                  <Input
-                    id={id}
-                    defaultValue={
-                      placeholder === "Smart POS" ? placeholder : undefined
-                    }
-                    placeholder={placeholder}
-                  />
-                </div>
-              ))}
-              <div className="flex flex-col gap-2">
-                <Label>Moneda</Label>
-                <Select defaultValue="cop">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cop">COP — Peso colombiano</SelectItem>
-                    <SelectItem value="usd">
-                      USD — Dólar estadounidense
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end md:col-span-2">
-                <Button>Guardar cambios</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="users">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <div>
-                <CardTitle>Equipo de trabajo</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Gestiona accesos y permisos.
-                </p>
-              </div>
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus data-icon="inline-start" />
-                    Invitar empleado
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Invitar empleado</DialogTitle>
-                  </DialogHeader>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="invite-name">Nombre completo</Label>
-                      <Input
-                        id="invite-name"
-                        placeholder="Nombre del empleado"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="invite-email">Correo electrónico</Label>
-                      <Input
-                        id="invite-email"
-                        type="email"
-                        placeholder="empleado@empresa.com"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>Rol</Label>
-                      <Select defaultValue="Vendedor">
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Vendedor">Vendedor</SelectItem>
-                          <SelectItem value="Administrador">
-                            Administrador
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={() => setOpen(false)}>
-                      Enviar invitación
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Miembro</TableHead>
-                    <TableHead>Rol</TableHead>
-                    <TableHead>Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {members.map((member) => (
-                    <TableRow key={member[1]}>
-                      <TableCell>
-                        <div className="font-medium">{member[0]}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {member[1]}
-                        </div>
-                      </TableCell>
-                      <TableCell>{roleBadge(member[2])}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{member[3]}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
     </section>
   );
 }

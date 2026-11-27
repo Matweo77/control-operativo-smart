@@ -54,7 +54,8 @@ import {
 } from "@/components/ui/table";
 import { PosView } from "@/components/pos-view";
 import { InventoryView } from "@/components/inventory-view";
-import { MovementsView, SettingsView } from "@/components/audit-settings-views";
+import { MovementsView } from "../components/audit-views";
+import { SettingsView } from "../components/setting-view";
 import { CustomersView } from "@/components/customers-view";
 import { ProductsView } from "@/components/products-view";
 

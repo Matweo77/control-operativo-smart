@@ -1,8 +1,10 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   LayoutGrid,
@@ -53,6 +55,8 @@ import {
 } from "@/components/ui/table";
 import { ProductFormSheet } from "@/components/product-form-sheet";
 import { useProductsCrud } from "../../hook/useProductsCrud";
+
+const PAGE_SIZE = 8;
 
 const money = (value) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -123,6 +127,7 @@ export function ProductsView() {
   } = useProductsCrud();
 
   const [viewMode, setViewMode] = useState("grid");
+  const [page, setPage] = useState(1);
   const [productToDelete, setProductToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState(null);
@@ -133,6 +138,25 @@ export function ProductsView() {
   const [csvResult, setCsvResult] = useState(null);
   const [isDraggingCsv, setIsDraggingCsv] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Reiniciar a página 1 cuando cambian filtros o el total de resultados
+  useEffect(() => {
+    setPage(1);
+  }, [query, categoryId, filteredProducts.length]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
+  const paginatedProducts = filteredProducts.slice(
+    startIndex,
+    startIndex + PAGE_SIZE
+  );
+
+  const selectedCategoryLabel =
+    categoryId === "all" || !categoryId
+      ? "Todas"
+      : categories.find((cat) => String(cat.id) === String(categoryId))
+          ?.nombre || "Todas";
 
   const handleCsvFileChange = (selectedFile) => {
     setCsvFile(selectedFile || null);
@@ -239,12 +263,12 @@ export function ProductsView() {
 
         <Select value={categoryId} onValueChange={setCategoryId}>
           <SelectTrigger className="w-full md:w-44">
-            <SelectValue placeholder="Todas" />
+            <SelectValue placeholder="Todas">{selectedCategoryLabel}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
             {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
+              <SelectItem key={cat.id} value={String(cat.id)}>
                 {cat.nombre}
               </SelectItem>
             ))}
@@ -332,156 +356,49 @@ export function ProductsView() {
           <Loader2 className="size-4 animate-spin" />
           Cargando productos...
         </div>
-      ) : filteredProducts.length === 0 ? (
+      ) : paginatedProducts.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             No se encontraron productos con los filtros actuales.
           </CardContent>
         </Card>
-      ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredProducts.map((item) => (
-            <Card key={item.id} className="overflow-hidden">
-              <CardContent className="flex flex-col gap-3.5 p-4">
-                <div className="flex h-60 w-full items-center justify-center overflow-hidden rounded-lg border bg-white p-3 dark:bg-muted/30">
-                  {item.imagenUrl ? (
-                    <img
-                      src={item.imagenUrl}
-                      alt={item.nombre}
-                      className="h-full w-full object-contain transition-transform duration-200 hover:scale-[1.03]"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center gap-1.5 text-muted-foreground/75">
-                      <Package className="size-7" />
-                      <span className="text-[11px]">Sin imagen</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <Badge variant="outline" className="text-xs font-normal">
-                    {item.categoriaNombre}
-                  </Badge>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7"
-                        aria-label={`Acciones para ${item.nombre}`}
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditSheet(item)}>
-                        <Pencil className="mr-2 size-3.5" />
-                        Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => requestDelete(item)}
-                      >
-                        <Trash2 className="mr-2 size-3.5" />
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                <div>
-                  <p className="text-base font-semibold leading-snug">
-                    {item.nombre}
-                  </p>
-                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                    {item.sku}
-                  </p>
-                </div>
-
-                <div className="flex items-end justify-between pt-0.5">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Costo</p>
-                    <p className="font-mono text-sm">
-                      {money(item.precioCosto)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Venta</p>
-                    <p className="font-mono text-sm font-semibold">
-                      {money(item.precioVenta)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-t pt-3">
-                  <span className="text-xs font-medium">
-                    Stock: {item.stockActual}
-                  </span>
-                  <StockStatusBadge
-                    stock={item.stockActual}
-                    min={item.stockMinimo}
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <TrendingUp className="size-3.5" />
-                  <span>Margen {Math.round(item.margen)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Costo</TableHead>
-                  <TableHead>Venta</TableHead>
-                  <TableHead>Stock</TableHead>
-                  <TableHead>Margen</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-xs">
-                      {item.sku}
-                    </TableCell>
-                    <TableCell className="font-medium">{item.nombre}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {item.categoriaNombre}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {money(item.precioCosto)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs font-semibold">
-                      {money(item.precioVenta)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {item.stockActual}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {Math.round(item.margen)}%
-                    </TableCell>
-                    <TableCell>
-                      <StockStatusBadge
-                        stock={item.stockActual}
-                        min={item.stockMinimo}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
+        <>
+          {viewMode === "grid" ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+              {paginatedProducts.map((item) => (
+                <Card key={item.id} className="overflow-hidden">
+                  <CardContent className="flex flex-col gap-3.5 p-4">
+                    <div className="flex h-52 w-full items-center justify-center overflow-hidden rounded-lg border bg-white p-3 dark:bg-muted/30">
+                      {item.imagenUrl ? (
+                        <img
+                          src={item.imagenUrl}
+                          alt={item.nombre}
+                          loading="lazy"
+                          className="h-full w-full object-contain transition-transform duration-200 hover:scale-[1.03]"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1.5 text-muted-foreground/75">
+                          <Package className="size-7" />
+                          <span className="text-[11px]">Sin imagen</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="outline" className="text-xs font-normal">
+                        {item.categoriaNombre}
+                      </Badge>
+
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button type="button" variant="ghost" size="icon">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            aria-label={`Acciones para ${item.nombre}`}
+                          >
                             <MoreHorizontal className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -499,13 +416,157 @@ export function ProductsView() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                    </div>
+
+                    <div>
+                      <p className="text-base font-semibold leading-snug">
+                        {item.nombre}
+                      </p>
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        {item.sku}
+                      </p>
+                    </div>
+
+                    <div className="flex items-end justify-between pt-0.5">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Costo</p>
+                        <p className="font-mono text-sm">
+                          {money(item.precioCosto)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Venta</p>
+                        <p className="font-mono text-sm font-semibold">
+                          {money(item.precioVenta)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t pt-3">
+                      <span className="text-xs font-medium">
+                        Stock: {item.stockActual}
+                      </span>
+                      <StockStatusBadge
+                        stock={item.stockActual}
+                        min={item.stockMinimo}
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <TrendingUp className="size-3.5" />
+                      <span>Margen {Math.round(item.margen)}%</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Costo</TableHead>
+                      <TableHead>Venta</TableHead>
+                      <TableHead>Stock</TableHead>
+                      <TableHead>Margen</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedProducts.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-mono text-xs">
+                          {item.sku}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {item.nombre}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {item.categoriaNombre}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {money(item.precioCosto)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-semibold">
+                          {money(item.precioVenta)}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {item.stockActual}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {Math.round(item.margen)}%
+                        </TableCell>
+                        <TableCell>
+                          <StockStatusBadge
+                            stock={item.stockActual}
+                            min={item.stockMinimo}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="ghost" size="icon">
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openEditSheet(item)}
+                              >
+                                <Pencil className="mr-2 size-3.5" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => requestDelete(item)}
+                              >
+                                <Trash2 className="mr-2 size-3.5" />
+                                Eliminar
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="mr-1 size-4" />
+                Anterior
+              </Button>
+              <span className="px-2 text-xs text-muted-foreground">
+                Página {safePage} de {totalPages}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Siguiente
+                <ChevronRight className="ml-1 size-4" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Modal de Carga Masiva CSV */}

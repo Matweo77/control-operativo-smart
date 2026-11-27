@@ -1,4 +1,4 @@
-import { DashboardShell } from '@/components/dashboard-shell';
+import { DashboardShell } from "@/components/dashboard-shell";
 export default function SettingsPage() {
-    return <DashboardShell initialActive="Configuración"/>;
+  return <DashboardShell initialActive="Configuración" />;
 }

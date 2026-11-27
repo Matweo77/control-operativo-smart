@@ -6,10 +6,13 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Minus,
   Plus,
   Printer,
   Search,
+  Sparkles,
   Trash2,
   UserCheck,
   X,
@@ -40,6 +43,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+
+const DEFAULT_PAGE_SIZE = 8;
+const SPECIAL_LIMIT = 20;
 
 const CASHIER_OPTIONS = [
   "Laura Gómez",
@@ -191,6 +197,7 @@ function ProductThumbnail({ product }) {
         <img
           src={product.imageUrl}
           alt={product.name}
+          loading="lazy"
           onError={() => setImgError(true)}
           className="max-h-full max-w-full object-contain"
         />
@@ -376,21 +383,21 @@ function CustomerSearchSelect({
   };
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="flex items-center gap-1.5">
+    <div ref={containerRef} className="relative min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
         <button
           id="pos-customer"
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((prev) => !prev)}
-          className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 text-left text-sm transition-colors hover:bg-accent/50"
+          className="flex h-9 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 text-left text-sm transition-colors hover:bg-accent/50"
         >
           <span className="truncate">
             {selectedCustomer ? (
               <>
                 <span className="font-medium">{selectedCustomer.name}</span>
                 {selectedCustomer.document && (
-                  <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+                  <span className="ml-1 font-mono text-xs text-muted-foreground">
                     · {selectedCustomer.document}
                   </span>
                 )}
@@ -414,9 +421,9 @@ function CustomerSearchSelect({
             onClick={() => handleChoose("none")}
             aria-label="Quitar cliente seleccionado"
             title="Volver a Consumidor final"
-            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex h-9 w-7 shrink-0 items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <X className="size-4" />
+            <X className="size-3.5" />
           </button>
         )}
       </div>
@@ -507,7 +514,7 @@ function CustomerSearchSelect({
 
 export function PosView() {
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState(["Todos"]);
+  const [categories, setCategories] = useState([]);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [catalogError, setCatalogError] = useState("");
 
@@ -515,8 +522,10 @@ export function PosView() {
   const [selectedCustomerId, setSelectedCustomerId] = useState("none");
   const [cashier, setCashier] = useState("Laura Gómez");
 
-  const [category, setCategory] = useState("Todos");
+  const [category, setCategory] = useState("");
   const [query, setQuery] = useState("");
+  const [show20Special, setShow20Special] = useState(false);
+  const [page, setPage] = useState(1);
   const [cart, setCart] = useState([]);
   const [stockNotice, setStockNotice] = useState("");
 
@@ -586,10 +595,10 @@ export function PosView() {
         const uniqueCategories = Array.from(
           new Set([...fromMap, ...fromProducts]),
         );
-        setCategories(["Todos", ...uniqueCategories]);
+        setCategories(uniqueCategories);
       } else {
         setProducts([]);
-        setCategories(["Todos"]);
+        setCategories([]);
         setCatalogError(
           "No se pudieron cargar los productos desde el servidor.",
         );
@@ -614,17 +623,51 @@ export function PosView() {
     loadPosData({ showSpinner: true });
   }, [loadPosData]);
 
+  // Al cambiar búsqueda, categoría o filtro especial de 20, regresa a página 1
+  useEffect(() => {
+    setPage(1);
+  }, [category, query, show20Special]);
+
   const filteredProducts = useMemo(
     () =>
       products.filter(
         (product) =>
-          (category === "Todos" || product.category === category) &&
+          (!category || product.category === category) &&
           `${product.sku} ${product.name}`
             .toLowerCase()
             .includes(query.trim().toLowerCase()),
       ),
     [products, category, query],
   );
+
+  // Si el filtro especial de 20 está activo, limita el lote a 20 productos
+  const effectiveProducts = useMemo(
+    () =>
+      show20Special
+        ? filteredProducts.slice(0, SPECIAL_LIMIT)
+        : filteredProducts,
+    [filteredProducts, show20Special],
+  );
+
+  const pageSize = show20Special ? SPECIAL_LIMIT : DEFAULT_PAGE_SIZE;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(effectiveProducts.length / pageSize),
+  );
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const paginatedProducts = useMemo(
+    () => effectiveProducts.slice(startIndex, startIndex + pageSize),
+    [effectiveProducts, startIndex, pageSize],
+  );
+
+  const handleToggleCategory = (item) => {
+    setCategory((prev) => (prev === item ? "" : item));
+  };
+
+  const handleToggleSpecial20 = () => {
+    setShow20Special((prev) => !prev);
+  };
 
   const subtotal = useMemo(
     () => cart.reduce((acc, item) => acc + item.price * item.quantity, 0),
@@ -873,7 +916,7 @@ export function PosView() {
 
   return (
     <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
-      <section className="min-w-0 xl:w-[60%]" aria-label="Catálogo de productos">
+      <section className="min-w-0 xl:w-[65%]" aria-label="Catálogo de productos">
         <div className="mb-5 flex flex-col gap-4">
           <div className="relative">
             <Barcode
@@ -905,22 +948,39 @@ export function PosView() {
               role="tablist"
               aria-label="Filtrar categorías"
             >
-              {categories.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  role="tab"
-                  aria-selected={category === item}
-                  onClick={() => setCategory(item)}
-                  className={`rounded-md border px-3 py-2 text-sm transition-colors ${
-                    category === item
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
+              <button
+                type="button"
+                aria-pressed={show20Special}
+                onClick={handleToggleSpecial20}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  show20Special
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                }`}
+              >
+                <Sparkles className="size-3.5" />
+                <span>20 productos</span>
+              </button>
+
+              {categories.map((item) => {
+                const isActive = category === item;
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => handleToggleCategory(item)}
+                    className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
             </div>
             {loadingCatalog && (
               <span className="text-xs text-muted-foreground">
@@ -956,75 +1016,105 @@ export function PosView() {
               Cargando productos del catálogo...
             </CardContent>
           </Card>
-        ) : filteredProducts.length === 0 ? (
+        ) : paginatedProducts.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
               No hay productos que coincidan con el filtro actual.
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredProducts.map((product) => {
-              const outOfStock = product.stock <= 0;
-              const lowStock = product.stock > 0 && product.stock <= 5;
-              const inCartQty =
-                cart.find((item) => item.id === product.id)?.quantity || 0;
-              const reachedMax = inCartQty >= product.stock;
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {paginatedProducts.map((product) => {
+                const outOfStock = product.stock <= 0;
+                const lowStock = product.stock > 0 && product.stock <= 5;
+                const inCartQty =
+                  cart.find((item) => item.id === product.id)?.quantity || 0;
+                const reachedMax = inCartQty >= product.stock;
 
-              return (
-                <button
-                  type="button"
-                  key={product.id}
-                  disabled={outOfStock}
-                  onClick={() => addToCart(product)}
-                  className={`text-left ${
-                    outOfStock ? "cursor-not-allowed opacity-60" : ""
-                  }`}
-                >
-                  <Card
-                    className={`h-full overflow-hidden transition-colors ${
-                      outOfStock ? "border-border" : "hover:border-foreground"
+                return (
+                  <button
+                    type="button"
+                    key={product.id}
+                    disabled={outOfStock}
+                    onClick={() => addToCart(product)}
+                    className={`text-left ${
+                      outOfStock ? "cursor-not-allowed opacity-60" : ""
                     }`}
                   >
-                    <ProductThumbnail product={product} />
-                    <CardContent className="flex flex-col gap-3 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {product.sku}
-                        </span>
-                        <Badge
-                          variant={
-                            outOfStock || lowStock
-                              ? "destructive"
-                              : "secondary"
-                          }
-                        >
-                          {outOfStock ? "Agotado" : `${product.stock} stock`}
-                        </Badge>
-                      </div>
-                      <p className="min-h-10 text-sm font-medium">
-                        {product.name}
-                      </p>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-lg font-semibold">
-                          {money.format(product.price)}
-                        </p>
-                        {reachedMax && !outOfStock && (
-                          <span className="text-[11px] text-muted-foreground">
-                            Máx. en ticket
+                    <Card
+                      className={`h-full overflow-hidden transition-colors ${
+                        outOfStock ? "border-border" : "hover:border-foreground"
+                      }`}
+                    >
+                      <ProductThumbnail product={product} />
+                      <CardContent className="flex flex-col gap-3 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {product.sku}
                           </span>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </button>
-              );
-            })}
+                          <Badge
+                            variant={
+                              outOfStock || lowStock
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {outOfStock ? "Agotado" : `${product.stock} stock`}
+                          </Badge>
+                        </div>
+                        <p className="min-h-10 text-sm font-medium">
+                          {product.name}
+                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-lg font-semibold">
+                            {money.format(product.price)}
+                          </p>
+                          {reachedMax && !outOfStock && (
+                            <span className="text-[11px] text-muted-foreground">
+                              Máx. en ticket
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </button>
+                );
+              })}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="mr-1 size-4" />
+                  Anterior
+                </Button>
+                <span className="px-2 text-xs text-muted-foreground">
+                  Página {safePage} de {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Siguiente
+                  <ChevronRight className="ml-1 size-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </section>
 
-      <Card className="flex min-h-[620px] min-w-0 flex-col xl:w-[40%]">
+      <Card className="flex min-h-[620px] min-w-0 flex-col xl:w-[35%]">
         <CardHeader className="border-b border-border">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1037,7 +1127,7 @@ export function PosView() {
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <label
                 htmlFor="pos-customer"
                 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
@@ -1052,7 +1142,7 @@ export function PosView() {
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1.5">
               <label
                 htmlFor="pos-cashier"
                 className="text-xs font-medium text-muted-foreground"
