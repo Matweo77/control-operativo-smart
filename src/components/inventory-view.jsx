@@ -343,12 +343,6 @@ export function InventoryView() {
             Controla existencias y precios de tu catálogo.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline">
-            <Upload className="mr-1.5 size-4" />
-            Carga Masiva (CSV)
-          </Button>
-        </div>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row">
@@ -498,7 +492,7 @@ export function InventoryView() {
                                 <SlidersHorizontal className="mr-2 size-3.5" />
                                 Ajustar stock
                               </DropdownMenuItem>
-                              <DropdownMenuItem
+                              {/* <DropdownMenuItem
                                 className="text-destructive"
                                 onSelect={(e) => {
                                   e.preventDefault();
@@ -506,7 +500,7 @@ export function InventoryView() {
                                 }}
                               >
                                 Eliminar
-                              </DropdownMenuItem>
+                              </DropdownMenuItem> */}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -19,7 +19,6 @@ import {
   LogOut,
   Menu,
   Package,
-  Plus,
   Search,
   Settings,
   ShoppingCart,
@@ -51,6 +50,7 @@ import { InventoryView } from "@/components/inventory-view";
 import { MovementsView, SettingsView } from "@/components/audit-settings-views";
 import { CustomersView } from "@/components/customers-view";
 import { ProductsView } from "@/components/products-view";
+
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard },
   { label: "Ventas", icon: ShoppingCart },
@@ -60,6 +60,7 @@ const navItems = [
   { label: "Auditoría", icon: FileText },
   { label: "Configuración", icon: Settings },
 ];
+
 const salesData = [
   { day: "Lun", sales: 1840 },
   { day: "Mar", sales: 2320 },
@@ -69,6 +70,7 @@ const salesData = [
   { day: "Sáb", sales: 4120 },
   { day: "Dom", sales: 3780 },
 ];
+
 const predictions = [
   {
     name: "Café molido 500g",
@@ -89,6 +91,7 @@ const predictions = [
     velocity: "Media",
   },
 ];
+
 const transactions = [
   ["#POS-1048", "14:32", "María González", "$48.90", "Tarjeta"],
   ["#POS-1047", "14:18", "Carlos Ruiz", "$126.50", "Efectivo"],
@@ -96,7 +99,20 @@ const transactions = [
   ["#POS-1045", "13:41", "Diego Torres", "$89.75", "Tarjeta"],
   ["#POS-1044", "13:26", "Laura Sánchez", "$214.20", "Tarjeta"],
 ];
+
 const chartConfig = { sales: { label: "Ventas", color: "var(--chart-1)" } };
+
+function formatCurrentDate(date = new Date()) {
+  return new Intl.DateTimeFormat("es-CO", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })
+    .format(date)
+    .toUpperCase();
+}
+
 export function DashboardShell({ initialActive = "Dashboard" }) {
   const [active, setActive] = useState(initialActive);
   const [collapsed, setCollapsed] = useState(false);
@@ -104,6 +120,26 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggedOut, setLoggedOut] = useState(false);
+  const [currentDate, setCurrentDate] = useState(() => formatCurrentDate());
+
+  useEffect(() => {
+    const syncDate = () => {
+      setCurrentDate((prev) => {
+        const next = formatCurrentDate();
+        return prev === next ? prev : next;
+      });
+    };
+
+    syncDate();
+    const interval = setInterval(syncDate, 60_000);
+    window.addEventListener("focus", syncDate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", syncDate);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <aside
@@ -135,6 +171,7 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
             <X />
           </button>
         </div>
+
         <nav className="flex-1 p-3" aria-label="Navegación principal">
           <p
             className={`${collapsed ? "sr-only" : ""} mb-3 px-3 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground`}
@@ -157,6 +194,7 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
             </button>
           ))}
         </nav>
+
         <div className="border-t border-border p-3">
           <button
             onClick={() => setLoggedOut(true)}
@@ -259,17 +297,11 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
           <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Viernes, 29 de agosto de 2026
+                {currentDate}
               </p>
-              {/* <h1 className="text-3xl font-semibold tracking-tight">
-                {active}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Una vista clara de la operación de tu negocio.
-              </p> */}
             </div>
-
           </div>
+
           {active === "Dashboard" ? (
             <DashboardContent />
           ) : active === "Ventas" ? (
@@ -296,6 +328,7 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
           )}
         </main>
       </div>
+
       {loggedOut && (
         <div
           role="status"
@@ -307,6 +340,7 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
     </div>
   );
 }
+
 function DashboardContent() {
   return (
     <div className="flex flex-col gap-6">
@@ -340,6 +374,7 @@ function DashboardContent() {
           badge
         />
       </section>
+
       <section className="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -390,6 +425,7 @@ function DashboardContent() {
             </ChartContainer>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Predicción de Agotamiento</CardTitle>
@@ -423,6 +459,7 @@ function DashboardContent() {
           </CardContent>
         </Card>
       </section>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -472,6 +509,7 @@ function DashboardContent() {
     </div>
   );
 }
+
 function Kpi({ title, value, detail, icon: Icon, badge = false }) {
   return (
     <Card>
