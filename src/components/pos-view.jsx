@@ -41,6 +41,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
+const CASHIER_OPTIONS = [
+  "Laura Gómez",
+  "Carlos Ruiz",
+  "Ana Torres",
+  "Mostrador / Caja",
+];
+
 const money = new Intl.NumberFormat("es-CO", {
   style: "currency",
   currency: "COP",
@@ -231,6 +238,12 @@ function ReceiptPreview({ receipt, onPrint }) {
             <span className="text-zinc-500">Cliente:</span>{" "}
             <span className="font-medium">
               {receipt.cliente_nombre || "Consumidor final / Mostrador"}
+            </span>
+          </p>
+          <p>
+            <span className="text-zinc-500">Responsable:</span>{" "}
+            <span className="font-medium">
+              {receipt.responsable_nombre || "Mostrador / Caja"}
             </span>
           </p>
           <p>
@@ -500,6 +513,7 @@ export function PosView() {
 
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState("none");
+  const [cashier, setCashier] = useState("Laura Gómez");
 
   const [category, setCategory] = useState("Todos");
   const [query, setQuery] = useState("");
@@ -745,6 +759,7 @@ export function PosView() {
             Cliente: ${
               lastSale.cliente_nombre || "Consumidor final / Mostrador"
             }<br/>
+            Responsable: ${lastSale.responsable_nombre || "Mostrador / Caja"}<br/>
             Método: ${lastSale.metodo_pago || ""}
           </div>
           <div class="divider"></div>
@@ -793,6 +808,8 @@ export function PosView() {
 
     const payload = {
       cliente: selectedCustomerId !== "none" ? selectedCustomerId : null,
+      usuario: null,
+      responsable_nombre: cashier,
       metodo_pago: paymentMethod.trim().toLowerCase(),
       tasa_iva: "0.16",
       items: cart.map((item) => ({
@@ -827,6 +844,7 @@ export function PosView() {
         cliente_nombre:
           data.cliente_nombre ||
           (selectedCustomer ? selectedCustomer.name : null),
+        responsable_nombre: cashier,
         monto_recibido: receivedAmount,
         cambio: calculatedChange,
       };
@@ -1018,19 +1036,42 @@ export function PosView() {
             <Badge variant="outline">Nueva venta</Badge>
           </div>
 
-          <div className="mt-3 flex flex-col gap-1.5">
-            <label
-              htmlFor="pos-customer"
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-            >
-              <UserCheck className="size-3.5" />
-              Cliente (opcional)
-            </label>
-            <CustomerSearchSelect
-              customers={customers}
-              selectedCustomerId={selectedCustomerId}
-              onSelectCustomer={setSelectedCustomerId}
-            />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="pos-customer"
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+              >
+                <UserCheck className="size-3.5" />
+                Cliente (opcional)
+              </label>
+              <CustomerSearchSelect
+                customers={customers}
+                selectedCustomerId={selectedCustomerId}
+                onSelectCustomer={setSelectedCustomerId}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="pos-cashier"
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Cajero / Responsable
+              </label>
+              <Select value={cashier} onValueChange={setCashier}>
+                <SelectTrigger id="pos-cashier" className="h-9">
+                  <SelectValue placeholder="Responsable" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CASHIER_OPTIONS.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
 
@@ -1108,6 +1149,10 @@ export function PosView() {
                 </span>
               </div>
             )}
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Responsable</span>
+              <span className="font-medium text-foreground">{cashier}</span>
+            </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Subtotal</span>
               <span>{money.format(subtotal)}</span>
