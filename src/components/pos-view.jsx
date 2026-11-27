@@ -614,6 +614,8 @@ export function PosView() {
       } catch {
         // Mantiene opción Consumidor final si falla la carga de clientes
       }
+
+      return loadedProducts || [];
     } finally {
       if (showSpinner) setLoadingCatalog(false);
     }
@@ -848,6 +850,7 @@ export function PosView() {
     const baseUrl = getApiBaseUrl();
     const receivedAmount = Number(received || 0);
     const calculatedChange = Math.max(0, receivedAmount - total);
+    const soldItems = cart.map((item) => ({ ...item }));
 
     const payload = {
       cliente: selectedCustomerId !== "none" ? selectedCustomerId : null,
@@ -855,7 +858,7 @@ export function PosView() {
       responsable_nombre: cashier,
       metodo_pago: paymentMethod.trim().toLowerCase(),
       tasa_iva: "0.16",
-      items: cart.map((item) => ({
+      items: soldItems.map((item) => ({
         producto_id: item.id,
         cantidad: item.quantity,
       })),
@@ -899,7 +902,26 @@ export function PosView() {
       setReceived("");
       setSelectedCustomerId("none");
       setStockNotice("");
-      await loadPosData({ showSpinner: false });
+
+      const updatedProducts = await loadPosData({ showSpinner: false });
+      const soldIds = new Set(soldItems.map((item) => item.id));
+      const newlyDepleted = (updatedProducts || []).filter(
+        (p) => soldIds.has(p.id) && Number(p.stock) <= 0,
+      );
+
+      // Respaldo por si el endpoint aún no reflejó la resta: detecta los que tenían stock === quantity
+      const fallbackDepleted =
+        newlyDepleted.length > 0
+          ? newlyDepleted
+          : soldItems.filter((item) => item.stock - item.quantity <= 0);
+
+      if (fallbackDepleted.length > 0 && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("smartpos:product-depleted", {
+            detail: { products: fallbackDepleted },
+          }),
+        );
+      }
 
       if (!printTicket) {
         setTimeout(() => {

@@ -111,6 +111,8 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
   const [loggedOut, setLoggedOut] = useState(false);
   const [currentDate, setCurrentDate] = useState(() => formatCurrentDate());
   const [alertsCount, setAlertsCount] = useState(0);
+  const [depletedNotifications, setDepletedNotifications] = useState([]);
+  const [floatingToast, setFloatingToast] = useState(null);
 
   useEffect(() => {
     const syncDate = () => {
@@ -129,6 +131,57 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
       window.removeEventListener("focus", syncDate);
     };
   }, []);
+
+  useEffect(() => {
+    const handleProductDepleted = (event) => {
+      const detail = event?.detail || {};
+      const products = Array.isArray(detail.products) ? detail.products : [];
+      if (products.length === 0) return;
+
+      const timestamp = new Date().toLocaleTimeString("es-CO", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const newItems = products.map((prod, idx) => ({
+        id: `${prod.id || prod.sku || "prod"}-${Date.now()}-${idx}`,
+        name: prod.name || "Producto sin nombre",
+        sku: prod.sku || "",
+        time: timestamp,
+      }));
+
+      setDepletedNotifications((prev) => [...newItems, ...prev].slice(0, 10));
+      setAlertsCount((prev) => prev + newItems.length);
+
+      const message =
+        newItems.length === 1
+          ? `Se agotó "${newItems[0].name}"${newItems[0].sku ? ` (${newItems[0].sku})` : ""}.`
+          : `Se agotaron ${newItems.length} productos: ${newItems.map((p) => p.name).join(", ")}.`;
+
+      setFloatingToast({
+        id: Date.now(),
+        title: "Producto agotado",
+        message,
+      });
+    };
+
+    window.addEventListener("smartpos:product-depleted", handleProductDepleted);
+    return () =>
+      window.removeEventListener(
+        "smartpos:product-depleted",
+        handleProductDepleted,
+      );
+  }, []);
+
+  useEffect(() => {
+    if (!floatingToast) return;
+    const timer = setTimeout(() => {
+      setFloatingToast(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [floatingToast]);
+
+  const totalNotifications = alertsCount + depletedNotifications.length;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -277,18 +330,53 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
                 className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <Bell />
-                {alertsCount > 0 && (
-                  <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
+                {totalNotifications > 0 && (
+                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
                 )}
               </button>
               {notificationsOpen && (
-                <div className="absolute right-0 top-11 w-72 rounded-md border border-border bg-popover p-4 shadow-lg">
-                  <p className="text-sm font-semibold">Notificaciones</p>
+                <div className="absolute right-0 top-11 z-50 w-80 rounded-md border border-border bg-popover p-4 shadow-lg">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Notificaciones</p>
+                    {depletedNotifications.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setDepletedNotifications([])}
+                        className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      >
+                        Limpiar agotados
+                      </button>
+                    )}
+                  </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {alertsCount > 0
                       ? `Tienes ${alertsCount} ${alertsCount === 1 ? "producto con alerta de stock" : "productos con alertas de stock"}.`
                       : "Sin alertas de inventario por el momento."}
                   </p>
+
+                  {depletedNotifications.length > 0 && (
+                    <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-destructive">
+                        Productos agotados recientemente
+                      </p>
+                      <div className="max-h-48 space-y-2 overflow-y-auto">
+                        {depletedNotifications.map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-xs"
+                          >
+                            <p className="font-medium text-foreground">
+                              {item.name}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              {item.sku ? `SKU ${item.sku} · ` : ""}
+                              Agotado a las {item.time}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -336,6 +424,29 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
           )}
         </main>
       </div>
+
+      {floatingToast && (
+        <div
+          role="alert"
+          className="fixed bottom-5 right-5 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-destructive/50 bg-popover p-4 text-popover-foreground shadow-xl"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="min-w-0 flex-1 text-xs">
+            <p className="font-semibold text-destructive">
+              {floatingToast.title}
+            </p>
+            <p className="mt-1 text-foreground">{floatingToast.message}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Cerrar notificación"
+            onClick={() => setFloatingToast(null)}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
       {loggedOut && (
         <div
