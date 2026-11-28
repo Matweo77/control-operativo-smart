@@ -141,10 +141,13 @@ function normalizePosProduct(item, index = 0, categoryMap = new Map()) {
     item.precio_venta ?? item.precio ?? item.price ?? item.valor_unitario ?? 0;
   const stockRaw =
     item.stock_actual ?? item.stock ?? item.cantidad_disponible ?? 0;
+  const barcodeRaw =
+    item.codigo_barras ?? item.codigoBarras ?? item.barcode ?? "";
 
   return {
     id: String(item.id ?? item.sku ?? `prod-${index}`),
     sku: String(item.sku ?? item.codigo ?? item.id ?? `SKU-${index + 1}`),
+    barcode: String(barcodeRaw ?? "").trim(),
     name: String(item.nombre ?? item.name ?? "Producto sin nombre"),
     category: resolveCategoryName(item, categoryMap),
     price: Number(priceRaw) || 0,
@@ -634,16 +637,16 @@ export function PosView() {
   }, [category, query, show20Special]);
 
   const filteredProducts = useMemo(
-    () =>
-      products.filter(
-        (product) =>
-          (!category || product.category === category) &&
-          `${product.sku} ${product.name}`
-            .toLowerCase()
-            .includes(query.trim().toLowerCase()),
-      ),
-    [products, category, query],
-  );
+  () =>
+    products.filter(
+      (product) =>
+        (!category || product.category === category) &&
+        `${product.sku} ${product.barcode} ${product.name}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+    ),
+  [products, category, query],
+);
 
   // Si el filtro especial de 20 está activo, limita el lote a 20 productos
   const effectiveProducts = useMemo(
@@ -735,35 +738,40 @@ export function PosView() {
     [showStockWarning],
   );
 
-  const handleBarcodeDetected = useCallback(
-    (rawCode) => {
-      const normalizedCode = String(rawCode || "").trim().toLowerCase();
-      if (!normalizedCode) return;
+const handleBarcodeDetected = useCallback(
+  (rawCode) => {
+    const normalizedCode = String(rawCode || "").trim().toLowerCase();
+    if (!normalizedCode) return;
 
-      const matchedProduct = products.find(
-        (p) => String(p.sku || "").trim().toLowerCase() === normalizedCode,
+    const matchedProduct = products.find((p) => {
+      const skuMatch = String(p.sku || "").trim().toLowerCase() === normalizedCode;
+      const barcodeMatch =
+        String(p.barcode || "").trim().toLowerCase() === normalizedCode;
+      return barcodeMatch || skuMatch;
+    });
+
+    if (!matchedProduct) {
+      const cleanRaw = String(rawCode || "").trim();
+      setQuery(cleanRaw);
+      showScanFeedback(
+        "error",
+        `No hay producto con código/SKU "${cleanRaw}" en el catálogo.`,
       );
+      return;
+    }
 
-      if (!matchedProduct) {
-        setQuery(String(rawCode || "").trim());
-        showScanFeedback(
-          "error",
-          `No hay producto con código/SKU "${String(rawCode || "").trim()}" en el catálogo.`,
-        );
-        return;
-      }
-
-      const added = addToCart(matchedProduct);
-      setQuery("");
-      if (added) {
-        showScanFeedback(
-          "success",
-          `Escaneado y agregado al ticket: ${matchedProduct.name} (${matchedProduct.sku}).`,
-        );
-      }
-    },
-    [products, addToCart, showScanFeedback],
-  );
+    const added = addToCart(matchedProduct);
+    setQuery("");
+    if (added) {
+      const codeLabel = matchedProduct.barcode || matchedProduct.sku;
+      showScanFeedback(
+        "success",
+        `Escaneado y agregado al ticket: ${matchedProduct.name} (${codeLabel}).`,
+      );
+    }
+  },
+  [products, addToCart, showScanFeedback],
+);
 
   const updateQuantity = (id, delta) => {
     setCart((items) =>
