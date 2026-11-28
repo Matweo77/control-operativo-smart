@@ -3,6 +3,7 @@ import './globals.css';
 export const metadata = {
     title: 'Smart POS — Control operativo',
     description: 'Gestiona ventas, inventario y clientes desde un solo lugar.',
+    manifest: "/manifest.json",
     generator: 'v0.app',
     icons: {
         icon: [

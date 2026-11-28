@@ -58,6 +58,7 @@ import { MovementsView } from "../components/audit-views";
 import { SettingsView } from "../components/setting-view";
 import { CustomersView } from "@/components/customers-view";
 import { ProductsView } from "@/components/products-view";
+import { PwaRegistrar } from "../components/pwa-registrar";
 
 const API_BASE = (
   (typeof import.meta !== "undefined" &&
@@ -185,9 +186,11 @@ export function DashboardShell({ initialActive = "Dashboard" }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <PwaRegistrar />
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-border bg-sidebar transition-all duration-200 ${collapsed ? "w-20" : "w-64"} ${mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
       >
+        
         <div className="flex h-20 items-center justify-between border-b border-border px-5">
           <div
             className={`flex items-center gap-3 overflow-hidden ${collapsed ? "justify-center" : ""}`}

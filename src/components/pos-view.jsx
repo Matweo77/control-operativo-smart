@@ -17,6 +17,7 @@ import {
   UserCheck,
   X,
 } from "lucide-react";
+import { BarcodeScannerModal } from "@/components/barcode-scanner-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -528,6 +529,8 @@ export function PosView() {
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState([]);
   const [stockNotice, setStockNotice] = useState("");
+  const [scanNotice, setScanNotice] = useState(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("Efectivo");
@@ -684,39 +687,83 @@ export function PosView() {
     [customers, selectedCustomerId],
   );
 
-  const showStockWarning = (message) => {
+  const showStockWarning = useCallback((message) => {
     setStockNotice(message);
     setTimeout(() => {
       setStockNotice((prev) => (prev === message ? "" : prev));
     }, 3000);
-  };
+  }, []);
 
-  const addToCart = (product) => {
-    if (product.stock <= 0) {
-      showStockWarning(`"${product.name}" está agotado (0 en stock).`);
-      return;
-    }
+  const showScanFeedback = useCallback((type, text) => {
+    setScanNotice({ type, text });
+    setTimeout(() => {
+      setScanNotice((prev) => (prev && prev.text === text ? null : prev));
+    }, 3500);
+  }, []);
 
-    setCart((items) => {
-      const existing = items.find((item) => item.id === product.id);
-      if (existing) {
-        if (existing.quantity >= product.stock) {
-          showStockWarning(
-            `Solo hay ${product.stock} unidades disponibles de "${product.name}".`,
+  const addToCart = useCallback(
+    (product) => {
+      if (product.stock <= 0) {
+        showStockWarning(`"${product.name}" está agotado (0 en stock).`);
+        return false;
+      }
+
+      let added = false;
+      setCart((items) => {
+        const existing = items.find((item) => item.id === product.id);
+        if (existing) {
+          if (existing.quantity >= product.stock) {
+            showStockWarning(
+              `Solo hay ${product.stock} unidades disponibles de "${product.name}".`,
+            );
+            return items;
+          }
+          setStockNotice("");
+          added = true;
+          return items.map((item) =>
+            item.id === product.id
+              ? { ...item, quantity: item.quantity + 1 }
+              : item,
           );
-          return items;
         }
         setStockNotice("");
-        return items.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
+        added = true;
+        return [...items, { ...product, quantity: 1 }];
+      });
+      return added;
+    },
+    [showStockWarning],
+  );
+
+  const handleBarcodeDetected = useCallback(
+    (rawCode) => {
+      const normalizedCode = String(rawCode || "").trim().toLowerCase();
+      if (!normalizedCode) return;
+
+      const matchedProduct = products.find(
+        (p) => String(p.sku || "").trim().toLowerCase() === normalizedCode,
+      );
+
+      if (!matchedProduct) {
+        setQuery(String(rawCode || "").trim());
+        showScanFeedback(
+          "error",
+          `No hay producto con código/SKU "${String(rawCode || "").trim()}" en el catálogo.`,
+        );
+        return;
+      }
+
+      const added = addToCart(matchedProduct);
+      setQuery("");
+      if (added) {
+        showScanFeedback(
+          "success",
+          `Escaneado y agregado al ticket: ${matchedProduct.name} (${matchedProduct.sku}).`,
         );
       }
-      setStockNotice("");
-      return [...items, { ...product, quantity: 1 }];
-    });
-  };
+    },
+    [products, addToCart, showScanFeedback],
+  );
 
   const updateQuantity = (id, delta) => {
     setCart((items) =>
@@ -950,17 +997,24 @@ export function PosView() {
               autoFocus
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && query.trim()) {
+                  event.preventDefault();
+                  handleBarcodeDetected(query);
+                }
+              }}
               placeholder="Escanea un código o busca por SKU..."
               aria-label="Buscar por código de barras o SKU"
               className="h-11 pl-10 pr-11 font-mono text-sm"
             />
             <button
               type="button"
-              onClick={() => inputRef.current?.focus()}
-              aria-label="Enfocar lector de código"
-              className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+              onClick={() => setScannerOpen(true)}
+              aria-label="Abrir cámara para escanear código de barras"
+              title="Escanear con cámara"
+              className="absolute right-2.5 top-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
-              <Camera />
+              <Camera className="size-5" />
             </button>
           </div>
 
@@ -1010,6 +1064,24 @@ export function PosView() {
               </span>
             )}
           </div>
+
+          {scanNotice && (
+            <div
+              role="status"
+              className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
+                scanNotice.type === "error"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400"
+              }`}
+            >
+              {scanNotice.type === "error" ? (
+                <AlertCircle className="size-4 shrink-0" />
+              ) : (
+                <Check className="size-4 shrink-0" />
+              )}
+              <span>{scanNotice.text}</span>
+            </div>
+          )}
 
           {catalogError && (
             <div
@@ -1288,6 +1360,12 @@ export function PosView() {
           </div>
         </CardContent>
       </Card>
+
+      <BarcodeScannerModal
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onDetected={handleBarcodeDetected}
+      />
 
       <Dialog
         open={paymentOpen}
